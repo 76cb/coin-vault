@@ -1,0 +1,231 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+
+import { api, Item, ITEM_TYPE_LABELS, METAL_LABELS, money, ozt, ROLE_LABELS, STATUS_LABELS } from "../api";
+import Documents from "../components/Documents";
+import ItemForm from "../components/ItemForm";
+import PhotoManager from "../components/PhotoManager";
+
+const DETAIL_LABELS: Record<string, string> = {
+  country: "Country",
+  denomination: "Denomination",
+  year: "Year",
+  mint_mark: "Mint mark",
+  series: "Series",
+  product_line: "Product",
+  mint: "Mint",
+  diameter_mm: "Diameter (mm)",
+  numista_id: "Numista N#",
+  pcgs_number: "PCGS number",
+  redbook_number: "Red Book number",
+  variety_notes: "Variety / die notes",
+  weight_value: "Weight",
+  weight_unit: "Unit",
+  refiner: "Refiner",
+  serial_number: "Serial number",
+  has_assay_card: "Assay card",
+  pick_number: "Pick number",
+  face_value: "Face value",
+  face_currency: "Face currency",
+};
+
+function grade(item: Item): string | null {
+  const c = item.condition;
+  if (!c) return null;
+  const parts = [c.grading === "slabbed" ? c.grading_service : "Raw", c.grade_text ?? (c.sheldon_grade ? String(c.sheldon_grade) : null), ...c.designations];
+  return parts.filter(Boolean).join(" ");
+}
+
+export default function ItemPage() {
+  const id = Number(useParams().id);
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [active, setActive] = useState<number | null>(null);
+  const item = useQuery({ queryKey: ["item", id], queryFn: () => api.item(id) });
+  const audit = useQuery({ queryKey: ["audit", id], queryFn: () => api.audit(id), enabled: showHistory });
+
+  if (item.isPending) return <p className="muted">Loading…</p>;
+  if (item.isError) return <p className="error">{(item.error as Error).message}. <Link to="/">Back to the collection</Link></p>;
+  const it = item.data;
+  const shown = it.photos.find((p) => p.id === active) ?? it.photos.find((p) => p.id === it.cover_photo_id) ?? it.photos[0];
+  const details = Object.entries(it.details).filter(([k, v]) => k !== "attributes" && v !== null && v !== "" && v !== false);
+  const attributes = (it.details.attributes ?? {}) as Record<string, string>;
+
+  const refresh = async () => {
+    await qc.invalidateQueries({ queryKey: ["item", id] });
+    await qc.invalidateQueries({ queryKey: ["items"] });
+    await qc.invalidateQueries({ queryKey: ["audit", id] });
+  };
+
+  return (
+    <>
+      <p className="crumbs"><Link to="/">Collection</Link></p>
+      <div className="page-head">
+        <h1>{it.title}</h1>
+        <div className="head-actions">
+          {it.deleted_at ? (
+            <button className="primary" onClick={async () => { await api.restoreItem(it.id); await refresh(); }}>Restore item</button>
+          ) : (
+            <>
+              <button onClick={() => setEditing((e) => !e)}>{editing ? "Close editor" : "Edit details"}</button>
+              <button
+                className="ghost danger"
+                onClick={async () => {
+                  if (!window.confirm(`Move “${it.title}” to the bin? You can restore it later.`)) return;
+                  await api.deleteItem(it.id);
+                  await qc.invalidateQueries({ queryKey: ["items"] });
+                  navigate("/");
+                }}
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      {it.deleted_at && <p className="notice">This item is in the bin.</p>}
+
+      <div className="item-layout">
+        <div className="item-photos">
+          {shown ? (
+            <a href={shown.urls.original} target="_blank" rel="noreferrer" className="hero-photo">
+              <img src={shown.urls.medium} alt={`${ROLE_LABELS[shown.role]} of ${it.title}`} />
+            </a>
+          ) : (
+            <div className="hero-photo empty-photo">No photos yet</div>
+          )}
+          {it.photos.length > 1 && (
+            <div className="photo-strip" role="list">
+              {it.photos.map((p) => (
+                <button key={p.id} role="listitem" className={p.id === shown?.id ? "on" : ""} onClick={() => setActive(p.id)} aria-label={`Show ${ROLE_LABELS[p.role]}`}>
+                  <img src={p.urls.thumb} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="item-facts">
+          {editing ? (
+            <ItemForm
+              item={it}
+              submitLabel="Save changes"
+              onCancel={() => setEditing(false)}
+              onSubmit={async (payload) => {
+                await api.updateItem(it.id, it.version, payload);
+                await qc.invalidateQueries({ queryKey: ["tags"] });
+                await refresh();
+                setEditing(false);
+              }}
+            />
+          ) : (
+            <>
+              <dl className="facts">
+                <dt>Type</dt>
+                <dd>{ITEM_TYPE_LABELS[it.item_type]}{it.quantity > 1 ? `, ${it.quantity} pieces` : ""}</dd>
+                <dt>Status</dt>
+                <dd>{STATUS_LABELS[it.status]}</dd>
+                {grade(it) && (<><dt>Grade</dt><dd>{grade(it)}{it.condition?.cert_number ? `, cert ${it.condition.cert_number}` : ""}</dd></>)}
+                {details.map(([k, v]) => (
+                  <FactRow key={k} label={DETAIL_LABELS[k] ?? k} value={v === true ? "Yes" : String(v)} />
+                ))}
+                {Object.entries(attributes).map(([k, v]) => (
+                  <FactRow key={k} label={k} value={v} />
+                ))}
+                {it.location_path && <FactRow label="Stored in" value={it.location_path} />}
+              </dl>
+
+              <h2>Metal</h2>
+              {it.metal_content.length ? (
+                <table className="figures">
+                  <thead>
+                    <tr><th>Metal</th><th>Gross</th><th>Fineness</th><th>Pure per piece</th></tr>
+                  </thead>
+                  <tbody>
+                    {it.metal_content.map((m, i) => (
+                      <tr key={i}>
+                        <td>{METAL_LABELS[m.metal]}</td>
+                        <td className="tabular">{m.gross_weight_g ? `${Number(m.gross_weight_g)} g` : "—"}</td>
+                        <td className="tabular">{m.fineness ? Number(m.fineness) : "—"}</td>
+                        <td className="tabular">{ozt(m.pure_toz)}{m.source === "override" ? " (override)" : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted">No metal content recorded. Melt value needs it.</p>
+              )}
+
+              <h2>Purchase</h2>
+              <dl className="facts">
+                <dt>Paid</dt>
+                <dd className="tabular">{money(it.purchase_price)}{it.purchase_fees ? ` + ${money(it.purchase_fees)} fees` : ""}</dd>
+                <dt>Cost basis</dt>
+                <dd className="tabular">
+                  {it.cost_basis ? money(it.cost_basis) : "Unknown"}
+                  {it.cost_basis_status === "estimated" ? " (estimated)" : ""}
+                </dd>
+                {it.acquired_date && <FactRow label="Acquired" value={it.acquired_date} />}
+                {it.purchase_source && <FactRow label="From" value={it.purchase_source} />}
+                {it.status === "sold" && (
+                  <>
+                    <dt>Sold</dt>
+                    <dd className="tabular">{money(it.sale_price)} on {it.sale_date}{it.sale_venue ? ` via ${it.sale_venue}` : ""}{it.sale_fees ? `, ${money(it.sale_fees)} fees` : ""}</dd>
+                  </>
+                )}
+              </dl>
+              {it.tags.length > 0 && (
+                <p className="tags">{it.tags.map((t) => <Link key={t} to={`/?tag=${encodeURIComponent(t)}`} className="tag">{t}</Link>)}</p>
+              )}
+              {it.notes && <p className="notes">{it.notes}</p>}
+            </>
+          )}
+        </div>
+      </div>
+
+      {!it.deleted_at && (
+        <div className="item-sections">
+          <section>
+            <h2>Photos</h2>
+            <PhotoManager item={it} />
+          </section>
+          <section>
+            <h2>Documents</h2>
+            <Documents item={it} />
+          </section>
+          <section>
+            <h2>History</h2>
+            <button className="link" onClick={() => setShowHistory((s) => !s)}>{showHistory ? "Hide changes" : "Show changes to value-affecting fields"}</button>
+            {showHistory && audit.data && (
+              <table className="figures audit">
+                <thead><tr><th>When</th><th>Field</th><th>From</th><th>To</th></tr></thead>
+                <tbody>
+                  {audit.data.map((a) => (
+                    <tr key={a.id}>
+                      <td>{new Date(a.at).toLocaleString()}</td>
+                      <td>{a.field.replace(/_/g, " ")}</td>
+                      <td>{a.old_value ?? "—"}</td>
+                      <td>{a.new_value ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+        </div>
+      )}
+    </>
+  );
+}
+
+function FactRow({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </>
+  );
+}
