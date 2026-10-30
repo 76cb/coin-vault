@@ -40,9 +40,39 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 
 The interactive API reference is at `http://<host>/api/v1/docs`.
 
-## Install on Proxmox (native LXC)
+## Install on Proxmox: helper script (recommended)
 
-These steps target a **Debian 13** LXC; Debian 12 also works (the script fetches Python 3.12 and Node 22 itself).
+Run this in the **Proxmox host's** shell (Datacenter → your node → Shell). It creates a Debian 13 container and installs everything into it.
+
+1. Get the script onto the host. The repo is private, so use a GitHub token with read access (a fine-grained token with *Contents: Read-only* for this repo):
+   ```sh
+   read -rsp "GitHub token: " GITHUB_TOKEN && export GITHUB_TOKEN && echo
+   curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+     https://raw.githubusercontent.com/76cb/coin-vault/main/deploy/proxmox/coinvault-lxc.sh -o coinvault-lxc.sh
+   ```
+2. Run it and answer the questions. Press Enter to accept each default.
+   ```sh
+   bash coinvault-lxc.sh
+   ```
+   It asks for:
+   - the container ID, hostname, CPU cores, RAM, disk and storage pool;
+   - an optional separate disk for photos;
+   - the network bridge and address (DHCP or static);
+   - the admin username and password.
+
+   It also asks whether to keep the token in the container so that `update.sh` can pull updates later.
+3. When it finishes, it prints the address to open, such as `http://192.168.1.50/`.
+
+Options:
+- `bash coinvault-lxc.sh --dry-run` shows every command without changing anything.
+- `--yes` accepts all the defaults and prints a generated admin password at the end.
+- `--help` lists the flags, for example `--ctid 120 --storage fast-ssd --ip 192.168.1.50/24 --media-disk 64`.
+
+Your token and admin password are copied into the container as root-only files. They never appear on a command line or in the output.
+
+## Install on Proxmox: by hand (native LXC)
+
+The steps the helper script automates, if you'd rather do them yourself. These target a **Debian 13** LXC. Debian 12 also works, because the installer fetches Python 3.12 and Node 22 itself.
 
 1. In Proxmox, create an unprivileged container from the Debian 13 template. A good start is 2 cores, 2 GB RAM and a 16 GB root disk. Photos grow over time; see **Storage** below.
 2. Open the container's console and install git:

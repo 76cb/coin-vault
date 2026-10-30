@@ -133,9 +133,16 @@ curl -fs http://127.0.0.1:8000/api/v1/health >/dev/null || die "the API did not 
 
 if ! sudo -u postgres psql -d coinvault -tAc "SELECT 1 FROM users LIMIT 1" | grep -q 1; then
   say "Create the admin account"
-  read -rp "Admin username [admin]: " ADMIN_USER
-  ADMIN_USER=${ADMIN_USER:-admin}
-  (cd "$APP_DIR/backend" && as_app "$VENV/bin/python" -m app.cli create-admin --username "$ADMIN_USER")
+  # Unattended installs (the Proxmox helper) pass CV_ADMIN_USER and a root-only CV_ADMIN_PASSWORD_FILE.
+  if [[ -n "${CV_ADMIN_USER:-}" && -f "${CV_ADMIN_PASSWORD_FILE:-}" ]]; then
+    (cd "$APP_DIR/backend" && as_app "$VENV/bin/python" -m app.cli create-admin --username "$CV_ADMIN_USER" --password-stdin) \
+      < "$CV_ADMIN_PASSWORD_FILE"
+    shred -u "$CV_ADMIN_PASSWORD_FILE" 2>/dev/null || rm -f "$CV_ADMIN_PASSWORD_FILE"
+  else
+    read -rp "Admin username [admin]: " ADMIN_USER
+    ADMIN_USER=${ADMIN_USER:-admin}
+    (cd "$APP_DIR/backend" && as_app "$VENV/bin/python" -m app.cli create-admin --username "$ADMIN_USER")
+  fi
 fi
 
 IP="$(hostname -I | awk '{print $1}')"
