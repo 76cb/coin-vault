@@ -44,11 +44,22 @@ The interactive API reference is at `http://<host>/api/v1/docs`.
 
 Run this in the **Proxmox host's** shell (Datacenter → your node → Shell). It creates a Debian 13 container and installs everything into it.
 
-1. Get the script onto the host. The repo is private, so use a GitHub token with read access (a fine-grained token with *Contents: Read-only* for this repo):
+1. Get the script onto the host. The repo is private, so you need a GitHub token: a fine-grained token with access to this repo and *Contents: Read-only*. Run these one block at a time.
+
+   Enter the token. Paste only the token, then press Enter; nothing shows while you paste.
    ```sh
-   read -rsp "GitHub token: " GITHUB_TOKEN && export GITHUB_TOKEN && echo
-   curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
-     https://raw.githubusercontent.com/76cb/coin-vault/main/deploy/proxmox/coinvault-lxc.sh -o coinvault-lxc.sh
+   read -rsp "GitHub token: " GITHUB_TOKEN; export GITHUB_TOKEN; echo
+   ```
+   Check it works. This should print `200`.
+   ```sh
+   curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/76cb/coin-vault
+   ```
+   If it prints `401`, the token is wrong or empty. If it prints `404`, the token doesn't include this repo.
+
+   Download the script:
+   ```sh
+   curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.raw" \
+     https://api.github.com/repos/76cb/coin-vault/contents/deploy/proxmox/coinvault-lxc.sh -o coinvault-lxc.sh
    ```
 2. Run it and answer the questions. Press Enter to accept each default.
    ```sh
