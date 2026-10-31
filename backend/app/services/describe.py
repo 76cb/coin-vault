@@ -371,7 +371,9 @@ def describe(text: str) -> Described:
 
     # a regular coin
     d.item_type = "coin" if (ym or DENOM_RE.search(raw) or grade_text) else "other"
-    for pat, series, denom in US_SERIES:
+    named = find_country(raw)
+    # "Mercury", "Liberty" and others are US series names, but not on a coin the title says is Belgian
+    for pat, series, denom in ([] if named not in (None, US) else US_SERIES):
         if re.search(pat, low):
             d.details["series"] = series
             if denom:
@@ -380,10 +382,8 @@ def describe(text: str) -> Described:
             d.recognized.insert(0, f"{series} {denom or ''}".strip())
             break
     # a foreign coin: the country named in the title, and its denomination as written ("Half Crown", "5 Pesos")
-    if "country" not in d.details:
-        country = find_country(raw)
-        if country and country != US:
-            d.details["country"] = country
+    if "country" not in d.details and named and named != US:
+        d.details["country"] = named
     foreign = d.details.get("country") not in (None, US)
     fd = find_foreign_denomination(raw) if "series" not in d.details else None
     if foreign and fd:

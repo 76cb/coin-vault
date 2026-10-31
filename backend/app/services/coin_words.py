@@ -200,7 +200,7 @@ FOREIGN_UNITS = (
     r"centavos?|centimos?|centesimos?|centimes?|pesos?|reales?|reals?|escudos?|francs?|francos?|reichsmarks?|marks?|"
     r"pfennigs?|kronen|kroner|kronor|krone|krona|coronas?|corona|lire|lira|guilders?|gulden|double\s*florins?|florins?|"
     r"zloty|zlotych|forint|korun|koruna|rubles?|roubles?|kopeks?|rupees?|annas?|yen|sen|yuan|jiao|chon|won|drams?|"
-    r"kurush|piastres?|rials?|riyals?|pahlavi|azadi|balboas?|bolivares|bolivar|soles|sol|libras?|quetzal(?:es)?|"
+    r"pengo|korona|markkaa|markka|pennia|penni|reis|skilling|kopecks?|kurush|piastres?|rials?|riyals?|pahlavi|azadi|balboas?|bolivares|bolivar|soles|sol|libras?|quetzal(?:es)?|"
     r"colones|cordobas?|lempiras?|sucres?|shillings?|pence|sixpence|threepence|fourpence|twopence|groats?|"
     r"half[\s-]?crowns?|crowns?|guineas?|pounds?|euros?|drachmas?|dinars?|dirhams?|thalers?|talers?|ducats?|"
     r"kreuzer|heller|rand|onzas?|stotinki|leva|lei|bani|dinara|para|ore|øre|cents?|dollars?"

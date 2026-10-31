@@ -309,7 +309,7 @@ def load_catalogue(files: list[str], directory: Path = CATALOGUE_DIR) -> list[di
 
 # Each migration loads a fixed list of files, so a file added later gets its own migration.
 CATALOGUE_V4 = ["americas.json", "europe.json", "uk_commonwealth.json", "us_expanded.json", "world_bullion_asia.json"]
-CATALOGUE_V5: list[str] = []
+CATALOGUE_V5 = ["americas_2.json", "bullion_2.json", "europe_2.json"]
 ROWS_V4 = load_catalogue(CATALOGUE_V4)
 ROWS_V5 = load_catalogue(CATALOGUE_V5)
 

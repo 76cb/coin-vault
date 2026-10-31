@@ -82,3 +82,16 @@ def test_european_coins(api):
     assert k[:1] == ["cat-france-10-francs-silver-hercule-1965-1973"]
     _, k = keys(api, "1780 Maria Theresa Thaler restrike Austria")
     assert k[:1] == ["cat-austria-maria-theresa-thaler-1780-restrike"]
+
+
+def test_second_batch(api):
+    _, k = keys(api, "1945 Newfoundland 10 cents silver")
+    assert k[:1] == ["cat-newfoundland-10-cents-silver-800-george-vi-1945-1947"]
+    _, k = keys(api, "2008-W 1/2 oz Gold Buffalo")
+    assert k[:1] == ["cat-united-states-american-gold-buffalo-1-2-oz-9999-2008"]
+    _, k = keys(api, "1880 Denmark 20 kroner gold")
+    assert k[:1] == ["cat-denmark-20-kroner-gold-900-1873-1917"]
+    _, k = keys(api, "1951 Belgium 20 francs Mercury silver")
+    assert k[:1] == ["cat-belgium-20-francs-silver-835-mercury-1949-1955"]
+    _, k = keys(api, "1938 Hungary 5 pengő")
+    assert k[:1] == ["cat-hungary-5-peng-silver-640-regular-issue-1938-1939"]
