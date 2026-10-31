@@ -18,9 +18,15 @@ as_app() { sudo -u coinvault bash -c 'set -a; . "$0"; set +a; cd /opt/coinvault/
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
 
 if [[ $# -eq 0 ]]; then
-  as_app "$VENV/bin/python" -m app.cli list-backups
+  LIST="$(as_app "$VENV/bin/python" -m app.cli list-backups)"
+  echo "$LIST"
+  NEWEST="$(awk 'NF {print $1; exit}' <<<"$LIST")"
   echo
-  echo "Restore one with: $0 <name>   (or the path of a downloaded coinvault-backup-*.tar)"
+  if [[ -n "$NEWEST" && "$NEWEST" != No* ]]; then
+    echo "To put one back, give its name, for example:"
+    echo "    $0 $NEWEST"
+    echo "or the path of a downloaded coinvault-backup-*.tar file. You'll be asked before anything changes."
+  fi
   exit 0
 fi
 
