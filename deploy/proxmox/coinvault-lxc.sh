@@ -10,7 +10,7 @@
 #   bash coinvault-lxc.sh --dry-run       # show what would run, change nothing
 #
 # Options (all optional): --ctid N --hostname NAME --cores N --memory MB --disk GB --storage ID
-#   --template-storage ID --bridge vmbr0 --ip dhcp|CIDR --gateway IP --media-disk GB
+#   --template-storage ID --bridge vmbr0 --ip dhcp|CIDR --gateway IP --nameserver IP --media-disk GB
 #   --repo URL --branch NAME --admin USER
 # Secrets can be given in the environment instead of prompts:
 #   GITHUB_TOKEN (read access to the private repo), CV_ADMIN_PASSWORD.
@@ -28,6 +28,7 @@ TPL_STORAGE="local"
 BRIDGE="vmbr0"
 IP="dhcp"
 GATEWAY=""
+NAMESERVER=""
 MEDIA_DISK=0
 REPO="https://github.com/76cb/coin-vault.git"
 BRANCH="main"
@@ -55,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --bridge) BRIDGE="$2"; shift 2 ;;
     --ip) IP="$2"; shift 2 ;;
     --gateway) GATEWAY="$2"; shift 2 ;;
+    --nameserver) NAMESERVER="$2"; shift 2 ;;
     --media-disk) MEDIA_DISK="$2"; shift 2 ;;
     --repo) REPO="$2"; shift 2 ;;
     --branch) BRANCH="$2"; shift 2 ;;
@@ -120,6 +122,7 @@ ask IP "IPv4 address, dhcp or CIDR such as 192.168.1.50/24" "$IP"
 if [[ "$IP" != "dhcp" ]]; then
   [[ "$IP" == */* ]] || die "a static address needs a prefix length, e.g. 192.168.1.50/24"
   ask GATEWAY "Gateway" "${GATEWAY:-${IP%.*}.1}"
+  ask NAMESERVER "DNS server" "${NAMESERVER:-$GATEWAY}"
 fi
 ask ADMIN_USER "Coin Vault admin username" "$ADMIN_USER"
 
@@ -161,7 +164,7 @@ msg "Summary"
 cat <<EOF
    Container   $CTID ($CT_HOSTNAME), Debian 13, unprivileged
    Resources   $CORES cores, ${MEMORY} MB RAM, ${DISK} GB on $STORAGE$( (( MEDIA_DISK > 0 )) && echo ", ${MEDIA_DISK} GB media disk" )
-   Network     $BRIDGE, $IP${GATEWAY:+ via $GATEWAY}
+   Network     $BRIDGE, $IP${GATEWAY:+ via $GATEWAY}${NAMESERVER:+, DNS $NAMESERVER}
    Source      $REPO ($BRANCH)${TOKEN:+, with token}
    Admin       $ADMIN_USER
 EOF
@@ -191,13 +194,26 @@ CREATE=(pct create "$CTID" "$TPL_STORAGE:vztmpl/$TEMPLATE"
   --cores "$CORES" --memory "$MEMORY" --swap "$SWAP"
   --rootfs "$STORAGE:$DISK" --net0 "$NET" --onboot 1 --tags coinvault)
 (( MEDIA_DISK > 0 )) && CREATE+=(--mp0 "$STORAGE:$MEDIA_DISK,mp=/var/lib/coinvault")
+[[ -n "$NAMESERVER" ]] && CREATE+=(--nameserver "$NAMESERVER")
 run "${CREATE[@]}"
 run pct start "$CTID"
 ok "container created and started"
 
 msg "Waiting for the network inside the container"
-run pct exec "$CTID" -- bash -c 'for i in $(seq 1 90); do getent hosts deb.debian.org >/dev/null && exit 0; sleep 1; done; exit 1' \
-  || die "the container has no network/DNS; check the bridge and IP settings"
+if ! run pct exec "$CTID" -- bash -c 'for i in $(seq 1 180); do getent hosts deb.debian.org >/dev/null && exit 0; sleep 1; done; exit 1'; then
+  warn "The container has no working network after 3 minutes. What it sees:"
+  pct exec "$CTID" -- ip -4 addr show eth0 || true
+  pct exec "$CTID" -- ip route || true
+  pct exec "$CTID" -- cat /etc/resolv.conf || true
+  pct exec "$CTID" -- ping -c2 -W2 1.1.1.1 || true
+  echo
+  echo "  No 'inet' address on eth0  -> no DHCP on bridge $BRIDGE: re-run with --ip 192.168.x.y/24 --gateway 192.168.x.1"
+  echo "  Address but ping fails     -> wrong gateway or VLAN on $BRIDGE"
+  echo "  Ping works, names fail     -> DNS: re-run with --nameserver 1.1.1.1 (or your router's IP)"
+  echo
+  echo "  Remove this attempt first:  pct stop $CTID; pct destroy $CTID"
+  die "the container has no network/DNS"
+fi
 ok "network is up"
 
 msg "Installing git"
@@ -217,7 +233,7 @@ if [[ -n "$TOKEN" ]]; then
 fi
 
 msg "Cloning $REPO"
-run pct exec "$CTID" -- git clone --branch "$BRANCH" "$REPO" /opt/coinvault/app || die "clone failed; check the token and repository URL"
+run pct exec "$CTID" -- git clone --branch "$BRANCH" "$REPO" /opt/coinvault/app || die "clone failed; check the token and repository URL (remove this attempt with: pct stop $CTID; pct destroy $CTID)"
 if [[ -n "$TOKEN" && ! "$KEEP_TOKEN" =~ ^[Yy] ]]; then
   run pct exec "$CTID" -- bash -c 'rm -f /root/.git-credentials; git config --global --unset credential.helper'
   warn "token removed; update.sh will ask for credentials when it pulls"
