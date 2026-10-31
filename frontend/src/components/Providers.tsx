@@ -143,7 +143,7 @@ function ProviderCard({ provider: p }: { provider: Provider }) {
       <header className="provider-head">
         <div>
           <h3 id={`prov-${p.key}`}>{p.label}</h3>
-          <span className="hint">{p.kind === "spot" ? "Spot prices" : "Sold prices (comps)"}</span>
+          <span className="hint">{p.kind === "spot" ? "Spot prices" : p.kind === "catalog" ? "Coin lookup by cert number" : "Sold prices (comps)"}</span>
         </div>
         <span className={`badge ${status.cls}`}>{status.text}</span>
       </header>
@@ -201,7 +201,7 @@ function ProviderCard({ provider: p }: { provider: Provider }) {
             }}
           >
             <label>
-              Stop after (requests per {p.quota_period === "calendar_month" ? "month" : "billing period"})
+              Stop after (requests per {p.quota_period === "calendar_month" ? "month" : p.quota_period === "calendar_day" ? "day" : "billing period"})
               <span className="inline-form">
                 <input type="number" min={0} inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value)} />
                 <button className="small" disabled={busy || cap === String(p.quota_cap ?? "")}>Set</button>
@@ -253,7 +253,7 @@ export function UsageMeter({ usage: u }: { usage: ProviderUsage }) {
         <span className="tabular">
           <strong>{u.used.toLocaleString()}</strong> {limit !== null ? `of ${limit.toLocaleString()} ` : ""}requests this period
         </span>
-        <span className="hint">resets {date(u.period_end)}</span>
+        <span className="hint">resets {u.period_end.slice(0, 10) === u.period_start.slice(0, 10) || new Date(u.period_end).getTime() - new Date(u.period_start).getTime() <= 86_400_000 ? "at midnight UTC" : date(u.period_end)}</span>
       </div>
       {limit !== null && (
         <div

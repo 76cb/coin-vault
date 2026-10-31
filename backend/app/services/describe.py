@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from app.services.coin_words import US, find_country, find_foreign_denomination
+
 GRADERS = ["PCGS", "NGC", "ANACS", "ICG", "CACG", "SEGS", "PMG", "PCI"]
 GRADE_RE = re.compile(r"\b(MS|PR|PF|SP|AU|XF|EF|VF|VG|AG|FR|PO|F|G)[\s-]?(\d{1,2})(\+)?(?![\d/])", re.I)
 
@@ -97,7 +99,19 @@ BULLION: list[tuple[str, str, str, str]] = [
     (r"\bkrugerrand\b", "Krugerrand", "South Africa", "Au"),
     (r"\bsovereign\b", "Sovereign", "United Kingdom", "Au"),
     (r"\b100\s*corona\b|\b100\s*kronen\b", "100 Corona", "Austria", "Au"),
+    (r"\bqueen'?s\s*beasts?\b", "Queen's Beasts", "United Kingdom", "Ag"),
+    (r"\btudor\s*beasts?\b", "Tudor Beasts", "United Kingdom", "Ag"),
+    (r"\bnoah'?s\s*ark\b", "Noah's Ark", "Armenia", "Ag"),
+    (r"\bsomali(?:a|an)?\s*elephant\b", "Somalian Elephant", "Somalia", "Ag"),
+    (r"\bplatypus\b", "Platypus", "Australia", "Pt"),
+    (r"\bswan\b", "Swan", "Australia", "Ag"),
+    (r"\b(?:bahar\s*)?azadi\b", "Bahar Azadi", "Iran", "Au"),
+    (r"\bcanadian\s*wildlife\b", "Wildlife series", "Canada", "Ag"),
 ]
+# the word a reference label must contain to be that product line ("Lunar series" -> "lunar")
+LINE_WORDS = {"Maple Leaf": "maple", "Lunar series": "lunar", "Queen's Beasts": "queen", "Tudor Beasts": "tudor",
+              "Noah's Ark": "noah", "Somalian Elephant": "elephant", "Bahar Azadi": "azadi", "Wildlife series": "wildlife",
+              "100 Corona": "corona"}
 GOLD_EAGLE_SIZES = {"$50": "age-1oz", "$25": "age-half", "$10": "age-quarter", "$5": "age-tenth",
                     "1": "age-1oz", "1/2": "age-half", "1/4": "age-quarter", "1/10": "age-tenth"}
 DIRECT_KEYS = {
@@ -141,6 +155,7 @@ class Described:
     composition_key: str | None = None  # a specific reference row, when the text names one
     notes: list[str] = field(default_factory=list)
     recognized: list[str] = field(default_factory=list)  # plain-language list of what was understood
+    size_toz: Decimal | None = None  # bullion size in troy ounces, when the text gives one
 
 
 def _plain(v: Decimal) -> str:
@@ -327,13 +342,17 @@ def describe(text: str) -> Described:
         d.item_type = "bullion"
         d.metal = metal
         word = {"Au": "Gold", "Ag": "Silver", "Pt": "Platinum", "Pd": "Palladium"}[metal]
-        generic = ("Maple Leaf", "Britannia", "Philharmonic", "Libertad", "Kangaroo", "Panda", "Krugerrand", "Kookaburra", "Koala", "Lunar series")
+        generic = ("Maple Leaf", "Britannia", "Philharmonic", "Libertad", "Kangaroo", "Panda", "Krugerrand", "Kookaburra", "Koala",
+                   "Lunar series", "Queen's Beasts", "Tudor Beasts", "Noah's Ark", "Somalian Elephant", "Swan", "Platypus", "Wildlife series")
         d.details["product_line"] = f"{word} {line}" if line in generic else line
         d.details["country"] = country
         dn = DENOM_RE.search(raw)
         if dn and dn.group(1):
             d.details["denomination"] = f"${dn.group(1)}"
         frac = re.search(r"\b(1/2|1/4|1/10|1/20|1)\s?(?:troy\s*)?oz\b", low)
+        if size:
+            grams, _, _ = _size_g(size.group(1), size.group(2))
+            d.size_toz = grams / Decimal("31.1034768")
         if line == "American Gold Eagle":
             d.composition_key = GOLD_EAGLE_SIZES.get(frac.group(1) if frac else "") or GOLD_EAGLE_SIZES.get(d.details.get("denomination", ""), "age-1oz")
         elif line == "Maple Leaf" and metal == "Au":
@@ -360,6 +379,15 @@ def describe(text: str) -> Described:
             d.details["country"] = "United States"
             d.recognized.insert(0, f"{series} {denom or ''}".strip())
             break
+    # a foreign coin: the country named in the title, and its denomination as written ("Half Crown", "5 Pesos")
+    if "country" not in d.details:
+        country = find_country(raw)
+        if country and country != US:
+            d.details["country"] = country
+    foreign = d.details.get("country") not in (None, US)
+    fd = find_foreign_denomination(raw) if "series" not in d.details else None
+    if foreign and fd:
+        d.details["denomination"] = fd
     if "denomination" not in d.details:
         dn = DENOM_RE.search(raw)
         if dn:
@@ -369,6 +397,12 @@ def describe(text: str) -> Described:
                 d.details["denomination"] = f"{dn.group(2)}c"
             elif dn.group(3):
                 d.details["denomination"] = WORD_DENOMS[re.sub(r"\s+", " ", dn.group(3).lower())]
+        elif fd:
+            d.details["denomination"] = fd
+    if d.item_type == "other" and fd:
+        d.item_type = "coin"
+    if foreign:
+        d.recognized.insert(0, " ".join(x for x in (d.details["country"], d.details.get("denomination")) if x))
     if d.item_type == "coin" and d.metal == "Ag" and re.search(r"\bproof\b|\bpr\s?\d|\bpf\s?\d", low) and d.details.get("year", 0) >= 1992:
         d.recognized.append("silver proof")
     if re.search(r"\b(us|u\.s\.|usa|united\s*states|american)\b", low) and "country" not in d.details:

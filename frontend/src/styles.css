@@ -607,3 +607,12 @@ table.figures { border-collapse: collapse; width: 100%; font-size: var(--step--1
 .qs-applied { margin: 0; }
 .more-fields { border-top: 1px dashed var(--hairline-strong); padding-top: 0.6rem; }
 .more-fields > summary { cursor: pointer; color: var(--gold); font-size: var(--step--1); margin-bottom: 0.6rem; }
+
+/* PCGS cert lookup in the quick add */
+.qs-pcgs { display: grid; gap: 0.75rem; }
+.qs-pcgs p { margin: 0; }
+.pcgs-card { display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: start; }
+.pcgs-card > div { display: grid; gap: 0.3rem; }
+.pcgs-thumb { width: 96px; height: auto; border-radius: var(--r); border: 1px solid var(--hairline); background: var(--surface); }
+@media (max-width: 480px) { .pcgs-card { grid-template-columns: 1fr; } }
+.qs-pcgs > button { justify-self: start; }

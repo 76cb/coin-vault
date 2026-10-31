@@ -14,7 +14,7 @@ from app.db import get_db
 from app.deps import Principal, read_items
 from app.models import Composition
 from app.routers.compositions import CompositionMatchOut, _out, _visible, match
-from app.services.describe import describe
+from app.services.describe import LINE_WORDS, describe
 
 router = APIRouter(tags=["items"])
 
@@ -71,6 +71,31 @@ def _bar_matches(db: Session, principal: Principal, metal: str | None, refiner: 
     return [CompositionMatchOut(**_out(c).model_dump(), score=s) for s, c in out[:5]]
 
 
+def _bullion_matches(db: Session, principal: Principal, line: str, country: str | None, metal: str | None,
+                     size_toz: Decimal | None, year: int | None) -> list[CompositionMatchOut]:
+    """Reference rows of a bullion line in the size the text gives (1 oz when it gives none)."""
+    base = re.sub(r"^(Gold|Silver|Platinum|Palladium)\s+", "", line)
+    word = LINE_WORDS.get(base, base.split()[-1].lower())
+    target = size_toz or Decimal(1)
+    scored: list[tuple[int, Composition]] = []
+    stmt = select(Composition).where(_visible(principal), Composition.per_face_unit.is_(False), Composition.label.ilike(f"%{word}%"))
+    if metal:
+        stmt = stmt.where(Composition.metal == metal)
+    for c in db.scalars(stmt):
+        if abs(c.pure_toz - target) > target * Decimal("0.02"):
+            continue
+        score = 5
+        if country and c.country == country:
+            score += 2
+        if year is not None and (c.year_from or c.year_to):
+            if (c.year_from and year < c.year_from) or (c.year_to and year > c.year_to):
+                continue
+            score += 3
+        scored.append((score, c))
+    scored.sort(key=lambda sc: (-sc[0], sc[1].label))
+    return [CompositionMatchOut(**_out(c).model_dump(), score=sc) for sc, c in scored[:5]]
+
+
 @router.post("/items/describe", response_model=DescribeOut)
 def describe_item(body: DescribeIn, principal: Principal = Depends(read_items), db: Session = Depends(get_db)):
     d = describe(body.text)
@@ -81,6 +106,8 @@ def describe_item(body: DescribeIn, principal: Principal = Depends(read_items), 
             comps = [CompositionMatchOut(**_out(c).model_dump(), score=100)]
     elif d.item_type == "bar":
         comps = _bar_matches(db, principal, d.metal, d.details.get("refiner"), d.details.get("weight_value"), d.details.get("weight_unit"), d.title)
+    elif d.item_type == "bullion" and d.details.get("product_line"):
+        comps = _bullion_matches(db, principal, d.details["product_line"], d.details.get("country"), d.metal, d.size_toz, d.details.get("year"))
     elif d.item_type == "coin" and (d.details.get("denomination") or d.details.get("series")):
         comps = match(
             country=d.details.get("country"), denomination=d.details.get("denomination"), year=d.details.get("year"),

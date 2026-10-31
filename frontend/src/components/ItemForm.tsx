@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 
-import { api, Composition, CostStatus, Described, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, STATUS_LABELS } from "../api";
+import { api, Composition, CostStatus, Described, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, PcgsLookup, STATUS_LABELS } from "../api";
 import ReferencePicker from "./ReferencePicker";
 
 type Str = string;
@@ -208,6 +208,30 @@ export function defaultsFromDescription(d: Described): Partial<FormState> {
     details_reason: c?.details_reason ?? "",
     metals,
     notes: d.notes.join("\n"),
+  };
+}
+
+/** Starting values from a PCGS cert lookup: PCGS's own name, grade, cert and metal figures. */
+export function defaultsFromPcgs(r: PcgsLookup): Partial<FormState> {
+  const details: Record<string, Str | boolean> = {};
+  for (const [k, v] of Object.entries(r.details)) details[k] = typeof v === "boolean" ? v : String(v);
+  const c = r.condition;
+  return {
+    item_type: r.item_type,
+    title: r.title,
+    quantity: "1",
+    details,
+    grading: "slabbed",
+    grading_service: "PCGS",
+    cert_number: c.cert_number,
+    grade_text: c.grade_text ?? "",
+    sheldon_grade: c.sheldon_grade ? String(c.sheldon_grade) : "",
+    designations: c.designations.join(", "),
+    details_reason: "",
+    metals: r.metal
+      ? [{ metal: r.metal.metal, gross_weight_g: tidy(r.metal.gross_weight_g), fineness: tidy(r.metal.fineness), pure_toz: "", composition_id: "" }]
+      : [],
+    notes: "",
   };
 }
 

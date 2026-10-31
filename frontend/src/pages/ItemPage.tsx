@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api, Item, ITEM_TYPE_LABELS, Metal, METAL_LABELS, money, ozt, ROLE_LABELS, RULE_LABELS, STATUS_LABELS } from "../api";
 import Documents from "../components/Documents";
@@ -41,6 +41,7 @@ function grade(item: Item): string | null {
 export default function ItemPage() {
   const id = Number(useParams().id);
   const navigate = useNavigate();
+  const note = (useLocation().state as { note?: string } | null)?.note;
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -64,6 +65,7 @@ export default function ItemPage() {
   return (
     <>
       <p className="crumbs"><Link to="/">Collection</Link></p>
+      {note && <p className="error" role="alert">{note}</p>}
       <div className="page-head">
         <h1>{it.title}</h1>
         <div className="head-actions">

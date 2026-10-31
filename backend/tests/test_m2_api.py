@@ -66,7 +66,7 @@ def test_custom_composition(api):
 def test_item_values_and_dashboard(api):
     add_spot("Ag", "30")
     add_spot("Au", "4000")
-    comp = api.get("/api/v1/compositions?q=Morgan").json()[0]["id"]
+    comp = next(c["id"] for c in api.get("/api/v1/compositions?q=Morgan").json() if c["key"] == "us-dollar-90")
     api.post("/api/v1/items", json={"item_type": "coin", "title": "Morgan", "quantity": 2, "purchase_price": "60",
                                     "metal_content": [{"metal": "Ag", "composition_id": comp}]})
     api.post("/api/v1/items", json={"item_type": "bullion", "title": "Gold tenth", "metal_content": [{"metal": "Au", "pure_toz": "0.1"}]})

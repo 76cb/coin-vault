@@ -53,6 +53,9 @@ class QuotaManager:
             start, end = _aware(rows[0].period_start), _aware(rows[0].period_end)
             while end <= now:
                 start, end = end, _add_month(end)
+        elif self.period_kind == "calendar_day":
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + dt.timedelta(days=1)
         else:
             start, end = calendar_month(now)
         row = QuotaPeriod(provider_key=self.provider_key, period_start=start, period_end=end, used=0)

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.crypto import EncryptionUnavailable
 from app.logging_setup import log
 from app.models import ApiCallLog, ProviderConfig, utcnow
-from app.providers import soldcomps
+from app.providers import pcgs, soldcomps
 from app.providers.base import CATALOG, ProviderError, UsageInfo, http_client
 from app.providers.spot import SPOT_PROVIDERS, MetalsDev
 from app.services import providers as psvc
@@ -73,6 +73,18 @@ def check_provider(db: Session, cfg: ProviderConfig, currency: str, client: http
                 if cfg.provider_key == "gold_api":
                     usage = None
                     message = _describe_quotes(SPOT_PROVIDERS["gold_api"].fetch(client, currency), currency)
+                elif cfg.provider_key == "pcgs":
+                    # no free check exists: look up a cert that can't exist. A good token gets "Invalid CertNo" or
+                    # "No data found" back (HTTP 200); a bad one gets HTTP 500.
+                    cost = 1
+                    usage = None
+                    try:
+                        pcgs.lookup_cert(client, key, "1000000")
+                        message = "Token accepted."
+                    except ProviderError as exc:
+                        if exc.http_status != 200 and exc.http_status != 204:
+                            raise
+                        message = "Token accepted. (The test looks up a cert that doesn't exist; it uses one of today's calls.)"
                 elif cfg.provider_key == "metal_sentinel":
                     message, usage = SPOT_PROVIDERS["metal_sentinel"].check(client, key)
                     cost = 1

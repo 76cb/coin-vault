@@ -26,6 +26,15 @@ class FakeProviders:
         self.ms_used = 100  # requests used so far this month, reported in RapidAPI's headers
         self.soldcomps_status = 200
         self.soldcomps_scrape_status = 200
+        self.pcgs_certs = {"32573628": {
+            "PCGSNo": "539704", "Name": "2015-S 25C Bombay Hook NP, Silver", "Year": 2015, "Denomination": "25C",
+            "Mintage": "", "MintMark": "S", "MintLocation": "San Francisco", "MetalContent": "90% Silver, 10% Copper",
+            "Diameter": 24.3, "Edge": "Reeded", "Weight": 6.25, "Country": "United States", "Grade": "PR70",
+            "Designation": "DCAM", "PriceGuideValue": 45.0, "Population": 1203, "PopHigher": 0,
+            "CoinFactsLink": "https://www.pcgs.com/coinfacts/coin/539704", "Designer": "", "CoinFactsNotes": "",
+            "Images": [{"Thumbnail": "https://images.pcgs.com/t.jpg", "Fullsize": "https://images.pcgs.com/f.jpg"}],
+            "MajorVariety": "", "MinorVariety": "", "DieVariety": "", "AuctionList": [], "SeriesName": "America the Beautiful Quarters",
+            "Category": "Washington Quarters", "HasTrueViewImage": False, "ImageReady": True, "IsNFCSecure": False}}
         self.soldcomps_used = 12
         self.scrape_params: list[dict] = []
         self.sold_items = [_sold("1", "40.00", "5.00", "2026-10-20"), _sold("2", "50.00", None, "2026-10-12"),
@@ -90,6 +99,14 @@ class FakeProviders:
                 }],
             }
             return httpx.Response(200, json=body, headers=headers)
+        if url.host == "api.pcgs.com":
+            if request.headers.get("Authorization") != "bearer pcgs-token":
+                return httpx.Response(500, json={"Message": "An error has occurred."})
+            cert = url.path.rsplit("/", 1)[-1]
+            coin = self.pcgs_certs.get(cert)
+            if coin is None:
+                return httpx.Response(200, json={"IsValidRequest": False, "ServerMessage": "No data found"})
+            return httpx.Response(200, json={**coin, "CertNo": cert, "IsValidRequest": True, "ServerMessage": "Request successful"})
         if url.host == "api.sold-comps.com" and url.path == "/v1/scrape":
             if request.headers.get("Authorization") != "Bearer sc_testkey1234":
                 return httpx.Response(401, json={"error": "Invalid API key"})

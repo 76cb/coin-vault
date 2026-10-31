@@ -24,7 +24,7 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
   - Purchase price is optional: mark a cost as known, estimated or unknown.
   - Each item also has storage location (nested), tags, status and sale details.
 - **Quick add:** paste a listing title ("2021 $1 Silver Eagle T2 First Production PCGS MS70") and the form fills in type, year, product or series, grading company, grade, designations, quantity and the matching reference composition. You check it, add the price, and save. Rarely used fields sit under "More details".
-- **Reference search:** type to search about 190 reference compositions: US 90/40/35% silver, pre-1933 US gold, major bullion coins (Eagles, Maples incl. fractional gold, Britannias, Philharmonics, Krugerrands, Kookaburra, Kangaroo, Sovereigns, 100 Corona, Palladium Eagle) and bars from Valcambi (incl. CombiBars), PAMP Suisse, Argor-Heraeus, Heraeus, Perth Mint, Royal Canadian Mint, The Royal Mint, Austrian Mint, Sunshine and Asahi. Each row cites where its fineness and weight came from; refiners not yet verified (Metalor, Credit Suisse, Engelhard, Johnson Matthey and others) are suggested as names, with the fineness typed in.
+- **Reference search:** type to search about 570 reference compositions. Besides the world catalogue below there are US 90/40/35% silver, pre-1933 US gold, major bullion coins (Eagles, Maples incl. fractional gold, Britannias, Philharmonics, Krugerrands, Kookaburra, Kangaroo, Sovereigns, 100 Corona, Palladium Eagle) and bars from Valcambi (incl. CombiBars), PAMP Suisse, Argor-Heraeus, Heraeus, Perth Mint, Royal Canadian Mint, The Royal Mint, Austrian Mint, Sunshine and Asahi. Each row cites where its fineness and weight came from; refiners not yet verified (Metalor, Credit Suisse, Engelhard, Johnson Matthey and others) are suggested as names, with the fineness typed in.
 - **Edits:** saves are protected against conflicts. If you edit an item in two browser tabs, the second save is refused rather than silently overwriting the first.
 - **History:** every change to a value-affecting field is recorded in the item's history: quantity, price, fees, status, sale, grade, metal content and valuation rule.
 - **Photos:** several per item, with roles (obverse, reverse, edge, slab front, slab back, other). You can reorder them and choose a cover. On upload:
@@ -45,14 +45,19 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
   - A price is stored only if it parses as a positive number; a failed or malformed answer moves on to the next provider and is logged.
   - The header shows the latest prices and when they were fetched.
 - **Melt value:** quantity × pure ounces × spot, per metal. Items without metal content have no melt value rather than zero.
-  - 36 reference compositions are built in: US 90%, 40% and 35% silver, pre-1933 US gold, and common bullion (Eagles, Maple Leafs, Krugerrands, Britannias, Philharmonics, Pandas and others). You can add your own.
+  - About 570 reference compositions are built in, and you can add your own.
+  - **World catalogue** (`backend/app/data/catalogue/*.json`, one file per region, 368 rows): early US silver and gold by weight standard, commemoratives, the Trade dollar and $3 gold; UK and Commonwealth pre-decimal silver; Canada, Mexico (pesos, gold pesos, Libertads) and Latin America; France, Switzerland, Germany, Austria, the Netherlands, Italy, Belgium, Spain, Sweden and Russia; Chinese dragon dollars and Pandas, Japan, the Philippines, Iran and Ottoman gold; and world bullion lines in every size (Britannia, Kangaroo, Lunar, Koala, Kookaburra, Libertad, Queen's Beasts and more).
+  - Every catalogue row names the page its weight and fineness came from, with any caveat in its citation. Rows we couldn't check against a source were left out rather than guessed; Norway, Denmark, Hungary, Poland, Greece and Portugal aren't covered yet.
+  - The title reader recognises foreign coins ("1937 Great Britain half crown", "1922 Mexico 2 pesos gold", "Swiss 20 francs Vreneli") and bullion sizes ("1/10 oz Gold Libertad", "30 g Gold Panda").
   - The item form suggests a composition from country, denomination, year, mint mark and title. When the details fit more than one (an 1881 dollar could be silver or gold), it lists them all.
   - Junk silver and gold lots are valued by face value × the composition's pure ounces per $1, including a worn-90% figure.
   - Each item has a valuation rule: the higher of melt and market (the default), melt, market or what you paid.
 - **Market values:** on an item, under Market value:
   - **Search sold listings** searches recent eBay sales through your SoldComps key (one request per search), shows each sale with photo, date and price, and saves the median of the ones you tick, with or without shipping.
   - **Enter a value** records a dealer quote, price guide or appraisal with its date and source.
+  - **PCGS price guide** (PCGS-graded items with a cert number) looks the cert up and saves today's PCGS price guide value, with the population, as a market value.
   - The newest value by date is used; older ones stay in the item's list.
+- **PCGS cert lookup:** type or paste a PCGS cert number into the quick add box and press Look up. PCGS's name, grade, designations, cert, PCGS number and metal weight fill the form, and you can save its price guide value as the market value. It uses the [PCGS Public API](https://www.pcgs.com/publicapi) with your own access token (free, 1,000 calls a day; the app stops at a cap you set, 900 by default).
 - **Dashboard:** total melt value, what you paid (known and estimated, with a count of items with no cost), gain on items that have both, and pure ounces by metal.
   - A chart of the spot price, or of what your holdings would have been worth, over a day to a year.
   - Breakdowns by metal, type and storage location.

@@ -157,3 +157,46 @@ test("search the reference list for a bar", async ({ page }) => {
   await expect(page.locator(".refpick-chosen")).toContainText("Heraeus silver bar, 1 kg (.9999)");
   await expect(page.getByLabel("Weight", { exact: true })).toHaveValue("1000");
 });
+
+test("look up a PCGS cert number", async ({ page }) => {
+  // the e2e server can't reach PCGS, so its two endpoints are answered here
+  const name = unique("1881-S $1 Morgan");
+  await page.route("**/api/v1/pcgs/lookup", (route) =>
+    route.fulfill({
+      json: {
+        coin: {
+          cert_no: "12345678", pcgs_no: "7126", name, year: 1881, denomination: "$1", mint_mark: "S", country: "United States",
+          grade: "MS65", designation: null, metal_content: "90% Silver, 10% Copper", weight_g: "26.73", price_guide: "325",
+          population: 44000, pop_higher: 12000, coinfacts_link: null, series: "Morgan Dollar", images: [],
+        },
+        item_type: "coin",
+        title: `${name} PCGS MS65`,
+        details: { country: "United States", year: 1881, mint_mark: "S", series: "Morgan Dollar", denomination: "$1", pcgs_number: "7126" },
+        condition: { grading: "slabbed", grading_service: "PCGS", cert_number: "12345678", grade_text: "MS65", sheldon_grade: 65, designations: [], details_reason: null },
+        metal: { metal: "Ag", gross_weight_g: "26.73", fineness: "0.9000" },
+        currency_note: "PCGS price guide values are in US dollars.",
+      },
+    }),
+  );
+  let priceGuideCalls = 0;
+  await page.route("**/api/v1/items/*/pcgs/price-guide", (route) => {
+    priceGuideCalls += 1;
+    return route.fulfill({ status: 201, json: { id: 1, item_id: 1, kind: "manual", value_each: "325", currency: "USD", as_of: "2026-10-31", source: "PCGS Price Guide (MS65)", notes: null, details: null } });
+  });
+
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.locator("#qs-text").fill("cert #12345678");
+  await page.getByRole("button", { name: "Look up cert 12345678 at PCGS" }).click();
+  await expect(page.locator(".pcgs-card")).toContainText("PCGS MS65, cert 12345678");
+  await expect(page.locator(".pcgs-card")).toContainText("$325");
+  await expect(page.getByLabel("Save the PCGS price guide value as its market value")).toBeChecked();
+  await page.getByRole("button", { name: "Fill in the form" }).click();
+
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(`${name} PCGS MS65`);
+  await expect(page.getByLabel("Cert number")).toHaveValue("12345678");
+  await expect(page.getByLabel("Gross weight (g)")).toHaveValue("26.73");
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("heading", { name: `${name} PCGS MS65` })).toBeVisible();
+  expect(priceGuideCalls).toBe(1);
+});

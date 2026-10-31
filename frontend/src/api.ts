@@ -431,6 +431,50 @@ export interface Described {
   compositions: (Composition & { score: number })[];
 }
 
+export interface PcgsCoin {
+  cert_no: string;
+  pcgs_no: string | null;
+  name: string | null;
+  year: number | null;
+  denomination: string | null;
+  mint_mark: string | null;
+  country: string | null;
+  grade: string | null;
+  designation: string | null;
+  metal_content: string | null;
+  weight_g: string | null;
+  price_guide: string | null;
+  population: number | null;
+  pop_higher: number | null;
+  coinfacts_link: string | null;
+  series: string | null;
+  images: { thumbnail: string | null; fullsize: string | null }[];
+}
+
+export interface PcgsLookup {
+  coin: PcgsCoin;
+  item_type: ItemType;
+  title: string;
+  details: Record<string, string | number | boolean>;
+  condition: {
+    grading: "slabbed";
+    grading_service: "PCGS";
+    cert_number: string;
+    grade_text: string | null;
+    sheldon_grade: number | null;
+    designations: string[];
+    details_reason: null;
+  };
+  metal: { metal: Metal; gross_weight_g: string; fineness: string } | null;
+  currency_note: string | null;
+}
+
+/** A PCGS cert number on its own ("12345678", "cert #12345678", "PCGS 12345678"), or null. */
+export function certNumber(text: string): string | null {
+  const m = text.trim().match(/^(?:pcgs\s*)?(?:cert(?:ificate)?\s*(?:#|no\.?|number)?\s*)?#?\s*(\d{6,10})$/i);
+  return m ? m[1] : null;
+}
+
 // --- Transport -----------------------------------------------------------------------
 
 let csrfToken: string | null = null;
@@ -563,6 +607,9 @@ export const api = {
     request<(Composition & { score: number })[]>("GET", `${A}/compositions/match?${new URLSearchParams(params)}`),
   createComposition: (body: unknown) => request<Composition>("POST", `${A}/compositions`, body),
   deleteComposition: (id: number) => request<void>("DELETE", `${A}/compositions/${id}`),
+
+  pcgsLookup: (certNo: string) => request<PcgsLookup>("POST", `${A}/pcgs/lookup`, { cert_no: certNo }),
+  pcgsPriceGuide: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/pcgs/price-guide`),
 
   valuations: (itemId: number) => request<Valuation[]>("GET", `${A}/items/${itemId}/valuations`),
   addValuation: (itemId: number, body: unknown) => request<Valuation>("POST", `${A}/items/${itemId}/valuations`, body),

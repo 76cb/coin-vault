@@ -1,13 +1,16 @@
 """Standard compositions (actual silver/gold/platinum/palladium weight).
 
-ROWS_V1 is loaded by migration 0002; ROWS_V2 (bars by refiner, more bullion coins) by migration 0004.
+ROWS_V1 is loaded by migration 0002; ROWS_V2 (bars by refiner, more bullion coins) by migration 0004,
+ROWS_V3 (US silver proofs) by 0005 and ROWS_V4 (the world catalogue, app/data/catalogue) by 0006.
 
 Pure weight = gross weight (g) / 31.1034768 x fineness, rounded to 6 decimals, from each mint's
 published specifications. Bullion uses the mint's stated pure content. Per-face rows give pure
 metal per $1 of face value for junk/constant-content lots.
 """
 
+import json
 from decimal import ROUND_HALF_UP, Decimal
+from pathlib import Path
 
 TROY = Decimal("31.1034768")
 Q = Decimal("0.000001")
@@ -263,4 +266,46 @@ ROWS_V3 += [
 ]
 SILVER_ONLY_PREFIXES = ("us-silver-proof-", "us-bicentennial-", "us-set-")
 
-ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3
+
+# --- Version 4: the world catalogue (migration 0006) ----------------------------------------
+# One JSON file per region in app/data/catalogue. Every row names the page its figures came from;
+# rows we could not check against a source were left out rather than guessed.
+
+CATALOGUE_DIR = Path(__file__).parent / "data" / "catalogue"
+_COUNTRY_ALIASES = {"Great Britain": "United Kingdom", "UK": "United Kingdom", "England": "United Kingdom",
+                    "USA": "United States", "US": "United States"}
+
+
+def _catalogue_row(r: dict) -> dict:
+    country = _COUNTRY_ALIASES.get(r["country"], r["country"])
+    label = r["label"].strip()
+    short = label[len(country):].strip() if label.lower().startswith(country.lower()) else label
+    key = f"cat-{_slug(country)}-{_slug(short)}"[:120].rstrip("-")
+    metal, fine = r["metal"], Decimal(str(r["fineness"])) if r.get("fineness") is not None else None
+    gross = Decimal(str(r["gross_g"])) if r.get("gross_g") else None
+    if r.get("pure_toz"):
+        pure = Decimal(str(r["pure_toz"])).quantize(Q, rounding=ROUND_HALF_UP)
+    else:
+        pure = (gross / TROY * fine).quantize(Q, rounding=ROUND_HALF_UP)
+    denom = r.get("denomination")
+    if not denom or denom.startswith("("):
+        denom = None
+    note = (r.get("note") or "").strip()
+    cite = r["source"] + (f". {note}" if note else "")
+    return dict(
+        key=key, label=label[:200], country=country, denomination=denom, year_from=r.get("year_from"),
+        year_to=r.get("year_to"), mint_marks=None, metal=metal, fineness=fine, gross_weight_g=gross,
+        pure_toz=pure, per_face_unit=False, citation=cite,
+    )
+
+
+def load_catalogue(directory: Path = CATALOGUE_DIR) -> list[dict]:
+    rows: list[dict] = []
+    for f in sorted(directory.glob("*.json")):
+        rows += [_catalogue_row(r) for r in json.loads(f.read_text(encoding="utf-8"))]
+    return rows
+
+
+ROWS_V4 = load_catalogue()
+
+ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4

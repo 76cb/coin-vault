@@ -133,6 +133,23 @@ CATALOG: dict[str, ProviderInfo] = {
         "month; RapidAPI's own usage figures are read from each response. Use your RapidAPI application key.",
         available_from=2,
     ),
+    "pcgs": ProviderInfo(
+        key="pcgs",
+        kind="catalog",
+        label="PCGS Public API",
+        needs_key=True,
+        has_quota=True,
+        quota_period="calendar_day",
+        default_cap=900,
+        default_priority=10,
+        rate_limited=False,
+        docs_url="https://www.pcgs.com/publicapi/documentation",
+        key_url="https://www.pcgs.com/publicapi",
+        note="Look up PCGS-graded coins by cert number: description, grade, PCGS number, weight and metal, price guide "
+        "value and population. Paste the access token you generate on the PCGS Public API page after signing in. "
+        "PCGS allows 1,000 calls a day.",
+        available_from=2,
+    ),
     "soldcomps": ProviderInfo(
         key="soldcomps",
         kind="comps",

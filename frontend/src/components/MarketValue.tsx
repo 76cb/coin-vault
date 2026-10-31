@@ -29,6 +29,9 @@ function priceOf(l: CompListing, basis: "sold" | "total"): number | null {
 export default function MarketValue({ item }: { item: Item }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState<null | "search" | "manual">(null);
+  const [pcgsBusy, setPcgsBusy] = useState(false);
+  const [pcgsError, setPcgsError] = useState<string | null>(null);
+  const pcgsSlab = (item.condition?.grading_service ?? "").toUpperCase() === "PCGS" && Boolean(item.condition?.cert_number);
   const history = useQuery({ queryKey: ["valuations", item.id], queryFn: () => api.valuations(item.id) });
   const cur = item.values?.currency ?? "USD";
 
@@ -51,8 +54,30 @@ export default function MarketValue({ item }: { item: Item }) {
           <button type="button" role="tab" aria-selected={open === "manual"} className={open === "manual" ? "on" : ""} onClick={() => setOpen(open === "manual" ? null : "manual")}>
             Enter a value
           </button>
+          {pcgsSlab && (
+            <button
+              type="button"
+              disabled={pcgsBusy}
+              title={`Looks up cert ${item.condition?.cert_number} and saves today's PCGS price guide value`}
+              onClick={async () => {
+                setPcgsBusy(true);
+                setPcgsError(null);
+                try {
+                  await api.pcgsPriceGuide(item.id);
+                  await refresh();
+                } catch (err) {
+                  setPcgsError((err as Error).message);
+                } finally {
+                  setPcgsBusy(false);
+                }
+              }}
+            >
+              {pcgsBusy ? "Asking PCGS…" : "PCGS price guide"}
+            </button>
+          )}
         </div>
       </div>
+      {pcgsError && <p className="error" role="alert">{pcgsError}</p>}
 
       {open === "search" && <CompsSearchPanel item={item} currency={cur} onSaved={async () => { await refresh(); setOpen(null); }} />}
       {open === "manual" && <ManualPanel item={item} onSaved={async () => { await refresh(); setOpen(null); }} />}

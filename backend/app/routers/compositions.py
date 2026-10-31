@@ -16,6 +16,7 @@ from app.deps import Principal, read_items, write_items
 from app.compositions_seed import SILVER_ONLY_PREFIXES
 from app.models import Composition, ItemMetalContent, LotDetails
 from app.schemas import Metal
+from app.services.coin_words import US, canonical_country, denom_key, fold, us_denom
 from app.services.items import compute_pure_toz
 
 router = APIRouter(prefix="/compositions", tags=["compositions"])
@@ -57,6 +58,11 @@ class CompositionIn(BaseModel):
 _GENERIC = {"dollar", "dollars", "half", "quarter", "dime", "cent", "cents", "silver", "gold", "coin", "united", "states"}
 
 
+# what a country's coins are called in English listings vs. on the coin ("Fat Man dollar" = 1 yuan)
+_UNIT_SYNONYMS = {"China": {"dollar": "yuan"}}
+_OZ_SIZE = re.compile(r"\b\d+(?:/\d+)?\s?oz\b", re.I)
+
+
 class CompositionMatchOut(CompositionOut):
     score: int
 
@@ -87,30 +93,12 @@ def list_compositions(
     return [_out(c) for c in db.scalars(stmt)]
 
 
-DENOMS = {
-    "10c": ("10c", "dime", "10 cents", "$0.10", "ten cents"),
-    "25c": ("25c", "quarter", "25 cents", "$0.25", "quarter dollar"),
-    "50c": ("50c", "half", "half dollar", "50 cents", "$0.50"),
-    "5c": ("5c", "nickel", "5 cents", "$0.05", "five cents"),
-    "$1": ("$1", "dollar", "1 dollar", "one dollar", "silver dollar"),
-    "$20": ("$20", "double eagle", "20 dollars", "twenty dollars"),
-    "$10": ("$10", "eagle", "10 dollars", "ten dollars"),
-    "$5": ("$5", "half eagle", "5 dollars", "five dollars"),
-    "$2.50": ("$2.50", "$2.5", "quarter eagle", "2.5 dollars"),
-}
-
-
-def _norm_denom(text: str | None) -> str | None:
-    if not text:
+def _comp_denom(c: Composition) -> str | None:
+    if not c.denomination:
         return None
-    t = re.sub(r"\s+", " ", text.strip().lower())
-    for code, aliases in DENOMS.items():
-        if t in aliases:
-            return code
-    for code, aliases in sorted(DENOMS.items(), key=lambda kv: -max(len(a) for a in kv[1])):
-        if any(a in t for a in aliases if len(a) > 3):
-            return code
-    return None
+    if c.country == US:
+        return us_denom(c.denomination) or denom_key(c.denomination)
+    return denom_key(c.denomination)
 
 
 @router.get("/match", response_model=list[CompositionMatchOut])
@@ -124,10 +112,17 @@ def match(
     db: Session = Depends(get_db),
 ):
     """Suggest compositions for a coin from its details, best first. Equal scores mean the details fit each equally well."""
-    denom = _norm_denom(denomination) or _norm_denom(series)
+    country = canonical_country(country)
+    us_code = None if country not in (None, US) else (us_denom(denomination) or (None if denomination else us_denom(series)))
+    generic = denom_key(denomination)
+    for old, new in _UNIT_SYNONYMS.get(country or "", {}).items():
+        generic = re.sub(rf"\b{old}\b", new, generic) if generic else generic
+    wanted = {k for k in (us_code, generic) if k}
     # "Silver Eagle" must not suggest gold eagles: a metal named in the text rules out the others
     named = re.search(r"\b(gold|silver|platinum|palladium)\b", f"{series or ''} {denomination or ''}".lower())
     metal = {"gold": "Au", "silver": "Ag", "platinum": "Pt", "palladium": "Pd"}[named.group(1)] if named else None
+    says_oz = bool(re.search(r"\boz\b|ounce|onza", f"{series or ''} {denomination or ''}".lower()))
+    words = [w for w in re.findall(r"[a-z]{4,}", fold(series or "").lower()) if w not in _GENERIC]
     scored: list[tuple[int, Composition]] = []
     for c in db.scalars(select(Composition).where(_visible(principal), Composition.per_face_unit.is_(False))):
         if metal and c.metal != metal:
@@ -135,15 +130,18 @@ def match(
         # silver proofs and 40% Bicentennials share years and mint mark with copper-nickel coins
         if c.key.startswith(SILVER_ONLY_PREFIXES) and metal != "Ag":
             continue
-        score = 0
-        if country and c.country and country.strip().lower() in (c.country.lower(), "usa", "us", "u.s.") and c.country == "United States":
-            score += 2
-        elif country and c.country and country.strip().lower() == c.country.lower():
-            score += 2
-        elif country and c.country:
+        # bullion sized in ounces (the 5 oz America the Beautiful "quarter") only when the text gives a size
+        if not says_oz and _OZ_SIZE.search(c.label):
             continue
-        if denom and c.denomination:
-            if c.denomination != denom:
+        score = 0
+        if country and c.country:
+            if country.lower() != c.country.lower():
+                continue
+            score += 2
+        elif not country and us_code and c.country and c.country != US:
+            continue  # "a dime" with no country is a US dime, not a Canadian 10 cents
+        if wanted and c.denomination:
+            if _comp_denom(c) not in wanted:
                 continue
             score += 3
         if year is not None and (c.year_from or c.year_to):
@@ -154,7 +152,8 @@ def match(
             if mint_mark.upper() not in c.mint_marks:
                 continue
             score += 1
-        if series and any(w in c.label.lower() for w in re.findall(r"[a-z]{4,}", series.lower()) if w not in _GENERIC):
+        label = fold(c.label).lower()
+        if words and any(w in label for w in words):
             score += 2
         if score >= 5:
             scored.append((score, c))
