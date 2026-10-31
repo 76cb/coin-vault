@@ -28,7 +28,7 @@ from decimal import Decimal, InvalidOperation
 
 import httpx
 
-from app.providers.base import METAL_SYMBOLS, ProviderError, SpotQuote, SpotResult, UsageInfo, parse_ts
+from app.providers.base import METAL_SYMBOLS, ProviderError, SpotQuote, SpotResult, UsageInfo, parse_ts, sub_month
 
 GOLD_API_BASE = "https://api.gold-api.com"
 METALS_DEV_BASE = "https://api.metals.dev"
@@ -166,15 +166,9 @@ def rapidapi_usage(r: httpx.Response, now: dt.datetime | None = None) -> UsageIn
             now = now or dt.datetime.now(dt.UTC)
             # reset counts down in seconds; round so every response in a period gives the same end
             end = dt.datetime.fromtimestamp(round((now.timestamp() + reset) / 600) * 600, dt.UTC)
-            start = _sub_month(end)
+            start = sub_month(end)
         return UsageInfo(used=max(limit - remaining, 0), limit=limit, remaining=remaining, period_start=start, period_end=end)
     return None
-
-
-def _sub_month(d: dt.datetime) -> dt.datetime:
-    year, month = (d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12)
-    day = min(d.day, [31, 29 if year % 4 == 0 and (year % 100 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1])
-    return d.replace(year=year, month=month, day=day)
 
 
 class MetalSentinel:

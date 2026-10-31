@@ -36,7 +36,9 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
   - You can split, merge or re-role a group.
   - Then save each group as a new item or add it to an existing one.
 - **Documents:** receipts, invoices, certificates and assay cards (PDF or image), linked to one or more items. They're served only to the signed-in owner.
-- **Spot prices:** gold, silver, platinum and palladium are fetched every 15 minutes (configurable) from [gold-api.com](https://gold-api.com), which needs no key. [Metals.Dev](https://metals.dev) is an optional backup with its own key.
+- **Spot prices:** gold, silver, platinum and palladium are fetched every 15 minutes (configurable) from [gold-api.com](https://gold-api.com), which needs no key.
+  - gold-api.com's platinum and palladium had stopped updating when checked (Sep 17 and Oct 16, 2026), so every price is judged by its own timestamp. Out-of-date metals come from [Metal Sentinel](https://metal-sentinel.com) (free RapidAPI key, 7,500 requests a month), then [Metals.Dev](https://metals.dev) (free key, 100 a month).
+  - Backups are asked only for the metals still missing, and their calls are paced so the free allowance lasts the month.
   - Polling pauses while the metals markets are closed (Friday 5 pm to Sunday 6 pm New York time), and a price older than the stale threshold is marked stale.
   - A price is stored only if it parses as a positive number; a failed or malformed answer moves on to the next provider and is logged.
   - The header shows the latest prices and when they were fetched.
@@ -44,7 +46,11 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
   - 36 reference compositions are built in: US 90%, 40% and 35% silver, pre-1933 US gold, and common bullion (Eagles, Maple Leafs, Krugerrands, Britannias, Philharmonics, Pandas and others). You can add your own.
   - The item form suggests a composition from country, denomination, year, mint mark and title. When the details fit more than one (an 1881 dollar could be silver or gold), it lists them all.
   - Junk silver and gold lots are valued by face value × the composition's pure ounces per $1, including a worn-90% figure.
-  - Each item has a valuation rule: the higher of melt and market (the default), melt, market or what you paid. Until market values arrive in Milestone 4, "higher of" means melt.
+  - Each item has a valuation rule: the higher of melt and market (the default), melt, market or what you paid.
+- **Market values:** on an item, under Market value:
+  - **Search sold listings** searches recent eBay sales through your SoldComps key (one request per search), shows each sale with photo, date and price, and saves the median of the ones you tick, with or without shipping.
+  - **Enter a value** records a dealer quote, price guide or appraisal with its date and source.
+  - The newest value by date is used; older ones stay in the item's list.
 - **Dashboard:** total melt value, what you paid (known and estimated, with a count of items with no cost), gain on items that have both, and pure ounces by metal.
   - A chart of the spot price, or of what your holdings would have been worth, over a day to a year.
   - Breakdowns by metal, type and storage location.
@@ -52,7 +58,7 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
   - Keys are encrypted (AES-GCM) before they're stored and are never returned by the API; only the last four characters are shown.
   - Usage is counted on every call and, where the provider reports it, synced from the provider's own figures daily and when you press Test. The provider's count wins.
   - The usage meter turns amber at 80% of the cap and red at the cap, where calls stop until the period resets. Daily counts and the last calls are listed.
-  - Your SoldComps key can be saved, tested and monitored now (the test uses SoldComps' free usage endpoint). Comps searches arrive in Milestone 4.
+  - SoldComps usage is read from its headers after every search and from its free usage endpoint daily and on Test.
 - **Operations:** migrations run on startup, and there's a health endpoint (`/api/v1/health`, plus `/api/v1/health/ready` when signed in). Logs are structured JSON with secrets redacted.
 
 The interactive API reference is at `http://<host>/api/v1/docs`.
@@ -214,7 +220,8 @@ Tokens can do only what their scopes allow. Writes with a token don't need the C
 - **Resolution check uses the whole photo.** It looks at the photo's shorter side, not the coin's diameter, because auto-cropping to the coin isn't implemented yet.
 - **Discarded uploads keep their files.** A discarded group stays on disk so nothing you photographed is lost. There's no "empty the bin" action for them yet.
 - **Login throttling resets on restart.** The failed-login counter is kept in memory, which suits the single-process service.
-- **No market values yet.** Current value is melt value until sold-price comps arrive in Milestone 4. Exports, valuation history and backups come in Milestone 3.
+- **Market values aren't refreshed automatically.** They're fetched or entered when you choose to, and dated so you can see their age. Exports, valuation history and backups come in Milestone 3.
+- **Sold listings in another currency are left out**, not converted.
 - **Purchase prices aren't converted between currencies.** Changing the display currency changes spot prices and melt values, not what you paid.
 - **The holdings chart uses today's holdings.** It shows what your current metal would have been worth at past prices, not what you held on each date. Valuation history arrives in Milestone 3.
 - **Price history starts when you install.** The free spot sources give current prices only, so the chart fills in as the app polls.

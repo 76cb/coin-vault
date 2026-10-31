@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, Item, ITEM_TYPE_LABELS, Metal, METAL_LABELS, money, ozt, ROLE_LABELS, RULE_LABELS, STATUS_LABELS } from "../api";
 import Documents from "../components/Documents";
 import ItemForm from "../components/ItemForm";
+import MarketValue from "../components/MarketValue";
 import PhotoManager from "../components/PhotoManager";
 
 const DETAIL_LABELS: Record<string, string> = {
@@ -192,6 +193,7 @@ export default function ItemPage() {
 
       {!it.deleted_at && (
         <div className="item-sections">
+          {it.status !== "sold" && <MarketValue item={it} />}
           <section>
             <h2>Photos</h2>
             <PhotoManager item={it} />
@@ -246,7 +248,12 @@ function ValuePanel({ item }: { item: Item }) {
         <dt>Melt</dt>
         <dd className="tabular">{money(v.melt, cur)}</dd>
         <dt>Market</dt>
-        <dd className="hint">Not available yet</dd>
+        <dd className="tabular">
+          {v.market ? money(v.market, cur) : <span className="hint">None yet</span>}
+          {v.market && v.market_as_of && (
+            <span className="hint"> as of {new Date(`${v.market_as_of}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+          )}
+        </dd>
         <dt>Paid</dt>
         <dd className="tabular">{v.cost ? money(v.cost, cur) : "Unknown"}</dd>
         {v.gain && (

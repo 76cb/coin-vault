@@ -1,6 +1,6 @@
 [project]
 name = "coin-vault"
-version = "0.2.0"
+version = "0.3.0"
 description = "Self-hosted inventory and valuation for a precious-metals and coin collection"
 requires-python = ">=3.12"
 dependencies = [

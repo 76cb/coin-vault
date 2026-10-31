@@ -92,6 +92,10 @@ export interface ItemValues {
   melt_by_metal: Record<string, string>;
   melt_missing_spot: string[];
   market: string | null;
+  market_each: string | null;
+  market_as_of: string | null;
+  market_kind: "manual" | "comps" | null;
+  market_source: string | null;
   cost: string | null;
   current: string | null;
   gain: string | null;
@@ -294,6 +298,9 @@ export interface Summary {
     item_count: number;
     pieces: number;
     melt: string;
+    market: string;
+    market_items: number;
+    valued_at_market: number;
     cost: string;
     cost_estimated: string;
     current: string;
@@ -365,6 +372,44 @@ export interface DayCount {
   requests: number;
   calls: number;
   errors: number;
+}
+
+export interface CompListing {
+  item_id: string;
+  title: string | null;
+  url: string;
+  thumbnail_url: string | null;
+  condition: string | null;
+  buying_format: string | null;
+  ended_at: string | null;
+  sold_price: string | null;
+  shipping_price: string | null;
+  total_price: string | null;
+  currency: string | null;
+  best_offer: boolean;
+}
+export interface CompsSearch {
+  keyword: string;
+  total_results: string | null;
+  has_more: boolean;
+  currency: string;
+  listings: CompListing[];
+  other_currency: number;
+  stats: { count: number; low: string | null; median: string | null; high: string | null };
+  requests_used: number | null;
+  requests_limit: number | null;
+}
+export interface Valuation {
+  id: number;
+  item_id: number;
+  kind: "manual" | "comps";
+  value_each: string;
+  currency: string;
+  as_of: string;
+  source: string | null;
+  notes: string | null;
+  details: { keyword?: string; basis?: "sold" | "total"; count?: number; low?: string; median?: string; high?: string; listings?: CompListing[] } | null;
+  created_at: string;
 }
 
 // --- Transport -----------------------------------------------------------------------
@@ -498,6 +543,13 @@ export const api = {
     request<(Composition & { score: number })[]>("GET", `${A}/compositions/match?${new URLSearchParams(params)}`),
   createComposition: (body: unknown) => request<Composition>("POST", `${A}/compositions`, body),
   deleteComposition: (id: number) => request<void>("DELETE", `${A}/compositions/${id}`),
+
+  valuations: (itemId: number) => request<Valuation[]>("GET", `${A}/items/${itemId}/valuations`),
+  addValuation: (itemId: number, body: unknown) => request<Valuation>("POST", `${A}/items/${itemId}/valuations`, body),
+  deleteValuation: (id: number) => request<void>("DELETE", `${A}/valuations/${id}`),
+  compsKeyword: (itemId: number) => request<{ keyword: string }>("GET", `${A}/items/${itemId}/comps/keyword`),
+  searchComps: (itemId: number, body: { keyword: string; sold_within_days: number | null; condition: string; exact_match: boolean }) =>
+    request<CompsSearch>("POST", `${A}/items/${itemId}/comps/search`, body),
 
   settings: () => request<AppSettings>("GET", `${A}/settings`),
   patchSettings: (body: Partial<AppSettings>) => request<AppSettings>("PATCH", `${A}/settings`, body),

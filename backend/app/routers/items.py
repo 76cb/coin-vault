@@ -124,6 +124,7 @@ def list_items(
         .options(
             selectinload(Item.tags),
             selectinload(Item.photos),
+            selectinload(Item.valuations),
             selectinload(Item.coin),
             selectinload(Item.banknote),
             selectinload(Item.condition),

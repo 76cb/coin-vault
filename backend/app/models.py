@@ -204,6 +204,9 @@ class Item(Base):
     metal_content: Mapped[list[ItemMetalContent]] = relationship(
         cascade="all, delete-orphan", order_by="ItemMetalContent.id"
     )
+    valuations: Mapped[list[Valuation]] = relationship(
+        cascade="all, delete-orphan", order_by="(Valuation.as_of.desc(), Valuation.id.desc())", back_populates="item"
+    )
     photos: Mapped[list[Photo]] = relationship(
         cascade="all, delete-orphan", order_by="(Photo.sort_order, Photo.id)", foreign_keys="Photo.item_id"
     )
@@ -456,6 +459,31 @@ class ProviderConfig(Base):
     last_error_at: Mapped[dt.datetime | None] = mapped_column(TS)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)
+
+
+VALUATION_KINDS = ("manual", "comps")
+
+
+class Valuation(Base):
+    """A market value for one piece of an item: typed in by the owner, or the median of sold listings they picked."""
+
+    __tablename__ = "valuations"
+    __table_args__ = (
+        CheckConstraint(_in("kind", VALUATION_KINDS), name="kind"),
+        Index("ix_valuations_item_asof", "item_id", "as_of"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(10))
+    value_each: Mapped[Decimal] = mapped_column(MONEY)
+    currency: Mapped[str] = mapped_column(String(3))
+    as_of: Mapped[dt.date] = mapped_column(Date)
+    source: Mapped[str | None] = mapped_column(String(200))
+    notes: Mapped[str | None] = mapped_column(Text)
+    # comps: {"keyword", "basis": "sold"|"total", "count", "low", "median", "high", "listings": [...]}
+    details: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
+    item: Mapped[Item] = relationship(back_populates="valuations")
 
 
 class QuotaPeriod(Base):

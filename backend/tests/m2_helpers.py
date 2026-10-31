@@ -25,6 +25,12 @@ class FakeProviders:
         self.ms_body: dict | None = None  # overrides the metal-quote answer
         self.ms_used = 100  # requests used so far this month, reported in RapidAPI's headers
         self.soldcomps_status = 200
+        self.soldcomps_scrape_status = 200
+        self.soldcomps_used = 12
+        self.scrape_params: list[dict] = []
+        self.sold_items = [_sold("1", "40.00", "5.00", "2026-10-20"), _sold("2", "50.00", None, "2026-10-12"),
+                           _sold("3", "45.00", "4.50", "2026-10-02"), _sold("4", "60.00", "6.00", "2026-09-28", currency="GBP"),
+                           {**_sold("5", None, None, None), "listingType": "active", "currentPrice": "99.00"}]
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         url = request.url
@@ -84,6 +90,19 @@ class FakeProviders:
                 }],
             }
             return httpx.Response(200, json=body, headers=headers)
+        if url.host == "api.sold-comps.com" and url.path == "/v1/scrape":
+            if request.headers.get("Authorization") != "Bearer sc_testkey1234":
+                return httpx.Response(401, json={"error": "Invalid API key"})
+            if self.soldcomps_scrape_status == 429:
+                return httpx.Response(429, json={"code": "quota_exceeded", "error": "Monthly quota exceeded", "plan": "free",
+                                                 "limit": 100, "used": 100, "remaining": 0, "reset_at": "2026-11-14T00:00:00Z"})
+            self.soldcomps_used += 1
+            self.scrape_params.append(dict(url.params))
+            return httpx.Response(200, json={
+                "keyword": url.params.get("keyword"), "page": 1, "totalItems": len(self.sold_items),
+                "totalResults": "1,200+", "hasNextPage": True, "autoSelectedCategory": None, "items": self.sold_items,
+            }, headers={"X-Usage-Limit": "100", "X-Usage-Used": str(self.soldcomps_used),
+                        "X-Usage-Remaining": str(100 - self.soldcomps_used), "X-Usage-Reset": "2026-11-14T00:00:00Z"})
         if url.host == "api.sold-comps.com" and url.path == "/usage":
             if request.headers.get("Authorization") != "Bearer sc_testkey1234":
                 return httpx.Response(401, json={"error": "invalid key"})
@@ -99,3 +118,15 @@ class FakeProviders:
 
     def client(self) -> httpx.Client:
         return httpx.Client(transport=httpx.MockTransport(self.handler))
+
+
+def _sold(item_id, price, ship, ended, currency="USD"):
+    total = None if price is None else str(float(price) + float(ship or 0))
+    return {
+        "itemId": item_id, "url": f"https://www.ebay.com/itm/{item_id}", "title": f"1881-S Morgan Dollar PCGS MS63 #{item_id}",
+        "thumbnailUrl": f"https://i.ebayimg.com/{item_id}.jpg", "condition": "Certified", "conditionId": 3000,
+        "buyingFormat": "auction", "bidCount": 7, "listingType": "sold", "endedAt": ended, "soldPrice": price,
+        "soldPriceMax": None, "soldCurrency": currency, "bestOfferAccepted": False, "shippingPrice": ship,
+        "shippingCurrency": currency, "shippingType": "paid" if ship else "free", "totalPrice": total,
+        "scrapedAt": "2026-10-30T12:00:00Z",
+    }

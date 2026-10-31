@@ -52,6 +52,7 @@ def configured(tmp_root):
 
 
 TABLES = [
+    "valuations",
     "spot_prices",
     "provider_configs",
     "api_quota_periods",

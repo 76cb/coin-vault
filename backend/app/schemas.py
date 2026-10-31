@@ -212,6 +212,10 @@ class ItemValuesOut(_Base):
     melt_by_metal: dict[str, Decimal]
     melt_missing_spot: list[str]
     market: Decimal | None
+    market_each: Decimal | None = None
+    market_as_of: dt.date | None = None
+    market_kind: str | None = None
+    market_source: str | None = None
     cost: Decimal | None
     current: Decimal | None
     gain: Decimal | None
@@ -408,3 +412,83 @@ class GroupAttach(_Base):
 
 class GroupCreateItem(_Base):
     item: ItemCreate
+
+
+# --- Market values --------------------------------------------------------------------
+
+
+class CompListing(BaseModel):
+    item_id: str = Field(max_length=40)
+    title: str | None = Field(default=None, max_length=300)
+    url: str = Field(max_length=500)
+    thumbnail_url: str | None = Field(default=None, max_length=500)
+    condition: str | None = Field(default=None, max_length=80)
+    buying_format: str | None = Field(default=None, max_length=30)
+    ended_at: str | None = Field(default=None, max_length=10)
+    sold_price: Decimal | None = None
+    shipping_price: Decimal | None = None
+    total_price: Decimal | None = None
+    currency: str | None = Field(default=None, max_length=3)
+    best_offer: bool = False
+
+
+class CompsStats(BaseModel):
+    count: int
+    low: Decimal | None
+    median: Decimal | None
+    high: Decimal | None
+
+
+class CompsSearchIn(BaseModel):
+    keyword: str = Field(min_length=2, max_length=200)
+    sold_within_days: int | None = Field(default=90, ge=1, le=365)
+    condition: Literal["any", "new", "used"] = "any"
+    exact_match: bool = True
+
+
+class CompsSearchOut(BaseModel):
+    keyword: str
+    total_results: str | None
+    has_more: bool
+    currency: str
+    listings: list[CompListing]
+    other_currency: int  # listings dropped because they sold in another currency
+    stats: CompsStats  # over every listing returned, by sold price
+    requests_used: int | None
+    requests_limit: int | None
+
+
+class CompsSelection(BaseModel):
+    keyword: str = Field(max_length=200)
+    basis: Literal["sold", "total"] = "sold"  # sold price, or sold price + shipping
+    listings: list[CompListing] = Field(min_length=1, max_length=240)
+
+
+class ValuationIn(BaseModel):
+    kind: Literal["manual", "comps"] = "manual"
+    value_each: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=4)
+    as_of: dt.date | None = None
+    source: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=2000)
+    comps: CompsSelection | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.kind == "manual" and self.value_each is None:
+            raise ValueError("Enter a value")
+        if self.kind == "comps" and self.comps is None:
+            raise ValueError("Pick at least one sold listing")
+        return self
+
+
+class ValuationOut(_Base):
+    id: int
+    item_id: int
+    kind: str
+    value_each: Decimal
+    currency: str
+    as_of: dt.date
+    source: str | None
+    notes: str | None
+    details: dict | None
+    created_at: dt.datetime

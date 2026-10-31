@@ -120,7 +120,7 @@ export default function Collection() {
               </span>
               <span className="flip-foot">
                 <span className="flip-values">
-                  {it.current && <span className="tabular" title="Current value">{money(it.current, it.currency)}</span>}
+                  {it.current && <span className="tabular flip-value" title="Current value">{money(it.current, it.currency)}</span>}
                   <span className="tabular hint" title="What you paid">
                     {it.cost_basis ? `paid ${money(it.cost_basis, it.currency)}` : it.cost_basis_status === "unknown" ? "cost unknown" : ""}
                   </span>

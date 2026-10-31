@@ -447,13 +447,18 @@ def cover_thumb(item: Item) -> str | None:
 
 
 def values_out(db: Session, item: Item, currency: str, spot: dict) -> ItemValuesOut:
-    v = valuation.item_values(db, item, spot)
+    v = valuation.item_values(db, item, spot, currency=currency)
+    mv = v.market_valuation
     return ItemValuesOut(
         currency=currency,
         melt=v.melt,
         melt_by_metal=v.melt_by_metal,
         melt_missing_spot=v.melt_missing_spot,
         market=v.market,
+        market_each=mv.value_each if mv else None,
+        market_as_of=mv.as_of if mv else None,
+        market_kind=mv.kind if mv else None,
+        market_source=mv.source if mv else None,
         cost=v.cost,
         current=v.current,
         gain=v.gain,
@@ -521,7 +526,7 @@ def item_out(db: Session, item: Item, spot: dict | None = None) -> ItemOut:
 def list_entry(
     db: Session, item: Item, paths: dict[int, str | None], spot: dict | None = None, currency: str = "USD"
 ) -> ItemListEntry:
-    v = valuation.item_values(db, item, spot or {})
+    v = valuation.item_values(db, item, spot or {}, currency=currency)
     coin = item.coin if item.item_type in ("coin", "bullion") else None
     country = coin.country if coin else (item.banknote.country if item.banknote else None)
     return ItemListEntry(

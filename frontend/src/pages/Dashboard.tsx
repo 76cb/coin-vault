@@ -75,43 +75,56 @@ export default function Dashboard() {
       )}
 
       <section className="hero" aria-labelledby="hero-label">
-        <p id="hero-label" className="hero-label">Melt value of what you hold</p>
-        <p className="hero-value">{money(t.melt, cur)}</p>
-        <p className="muted">
-          {t.item_count} {t.item_count === 1 ? "item" : "items"}, {t.pieces} {t.pieces === 1 ? "piece" : "pieces"}
-          {newest ? `, at spot prices from ${ago(newest)}` : ""}.
-          {t.no_value_items > 0 && ` ${t.no_value_items} without metal content ${t.no_value_items === 1 ? "isn't" : "aren't"} counted.`}
+        <p id="hero-label" className="hero-label">Collection value</p>
+        <p className="hero-value">{money(t.current, cur)}</p>
+        <p className="hero-sub">
+          {t.item_count} {t.item_count === 1 ? "item" : "items"}, {t.pieces} {t.pieces === 1 ? "piece" : "pieces"}.{" "}
+          {t.valued_at_market > 0
+            ? `${t.valued_at_market} valued at market, the rest at melt${newest ? ` using spot prices from ${ago(newest)}` : ""}.`
+            : `Valued at melt${newest ? ` using spot prices from ${ago(newest)}` : ""}; add market values on each item.`}
+          {t.no_value_items > 0 && ` ${t.no_value_items} ${t.no_value_items === 1 ? "has" : "have"} no value yet.`}
         </p>
       </section>
 
-      <ul className="kpis">
-        <li className="kpi">
-          <span className="kpi-label">What you paid</span>
-          <span className="kpi-value">{money(t.cost, cur)}</span>
+      <dl className="ledger-row">
+        <div>
+          <dt>Melt</dt>
+          <dd>{money(t.melt, cur)}</dd>
+          <span className="hint">metal at spot</span>
+        </div>
+        <div>
+          <dt>Market</dt>
+          <dd>{t.market_items ? money(t.market, cur) : "—"}</dd>
+          <span className="hint">{t.market_items ? `${t.market_items} ${t.market_items === 1 ? "item" : "items"} with a market value` : "none entered yet"}</span>
+        </div>
+        <div>
+          <dt>Paid</dt>
+          <dd>{money(t.cost, cur)}</dd>
           <span className="hint">
-            {t.estimated_cost_items > 0 ? `Includes ${money(t.cost_estimated, cur)} estimated. ` : ""}
-            {t.cost_unknown_items > 0 ? `${t.cost_unknown_items} ${t.cost_unknown_items === 1 ? "item has" : "items have"} no cost recorded.` : "Every item has a cost."}
+            {t.estimated_cost_items > 0 ? `${money(t.cost_estimated, cur)} estimated. ` : ""}
+            {t.cost_unknown_items > 0 ? `${t.cost_unknown_items} without a cost.` : "Every item has a cost."}
           </span>
-        </li>
-        <li className="kpi">
-          <span className="kpi-label">Gain over cost</span>
-          <span className={`kpi-value ${Number(t.gain) < 0 ? "is-loss" : ""}`}>
+        </div>
+        <div>
+          <dt>Gain</dt>
+          <dd className={Number(t.gain) < 0 ? "is-loss" : "is-gain"}>
             {Number(t.gain) > 0 ? "+" : ""}
             {money(t.gain, cur)}
-          </span>
-          <span className="hint">On the {t.gain_items} {t.gain_items === 1 ? "item" : "items"} with a cost and a value.</span>
-        </li>
-        {heldMetals.map((m) => (
-          <li className="kpi" key={m}>
-            <span className="kpi-label">{METAL_LABELS[m]}</span>
-            <span className="kpi-value">{toz(s.pure_toz[m])}</span>
-            <span className="hint">pure, worth {money(s.by_metal.find((b) => b.key === m)?.melt ?? "0", cur)}</span>
-          </li>
-        ))}
-      </ul>
+          </dd>
+          <span className="hint">on {t.gain_items} {t.gain_items === 1 ? "item" : "items"} with a cost</span>
+        </div>
+      </dl>
 
-      {!s.market_values_available && (
-        <p className="hint">Values are melt only for now. Market values from recent sales arrive with the comps providers.</p>
+      {heldMetals.length > 0 && (
+        <dl className="ledger-row ledger-metals">
+          {heldMetals.map((m) => (
+            <div key={m}>
+              <dt>{METAL_LABELS[m]}</dt>
+              <dd>{toz(s.pure_toz[m])}</dd>
+              <span className="hint">pure, {money(s.by_metal.find((b) => b.key === m)?.melt ?? "0", cur)} at spot</span>
+            </div>
+          ))}
+        </dl>
       )}
 
       <SpotChart currency={cur} held={heldMetals} />
@@ -196,7 +209,7 @@ function SpotChart({ currency, held }: { currency: string; held: Metal[] }) {
 }
 
 function Breakdown({ title, buckets, currency }: { title: string; buckets: Bucket[]; currency: string }) {
-  const max = Math.max(0, ...buckets.map((b) => Number(b.melt)));
+  const max = Math.max(0, ...buckets.map((b) => Number(b.current)));
   return (
     <section className="panel">
       <h2>{title}</h2>
@@ -205,9 +218,9 @@ function Breakdown({ title, buckets, currency }: { title: string; buckets: Bucke
       ) : (
         <ul className="bars">
           {buckets.map((b) => {
-            const v = Number(b.melt);
+            const v = Number(b.current);
             const pct = max > 0 ? (v / max) * 100 : 0;
-            const tip = `${b.label}: ${money(b.melt, currency)} melt, ${b.count} ${b.count === 1 ? "item" : "items"}${Number(b.cost) ? `, paid ${money(b.cost, currency)}` : ""}`;
+            const tip = `${b.label}: ${money(b.current, currency)}, ${b.count} ${b.count === 1 ? "item" : "items"}${Number(b.cost) ? `, paid ${money(b.cost, currency)}` : ""}`;
             return (
               <li key={b.key} title={tip} tabIndex={0} aria-label={tip}>
                 <span className="bar-label">
@@ -216,7 +229,7 @@ function Breakdown({ title, buckets, currency }: { title: string; buckets: Bucke
                 </span>
                 <span className="bar-track">
                   {v > 0 && <span className="bar" style={{ width: `${Math.max(pct, 1) * 0.72}%` }} />}
-                  <span className="bar-value tabular">{v > 0 ? compactMoney(v, currency) : "No melt value"}</span>
+                  <span className="bar-value tabular">{v > 0 ? compactMoney(v, currency) : "No value yet"}</span>
                 </span>
               </li>
             );

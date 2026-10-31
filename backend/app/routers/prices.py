@@ -144,7 +144,7 @@ def _owned_items(db: Session, principal: Principal) -> list[Item]:
         db.scalars(
             select(Item)
             .where(Item.owner_id == principal.owner_id, Item.deleted_at.is_(None), Item.status != "sold")
-            .options(selectinload(Item.metal_content), selectinload(Item.lot))
+            .options(selectinload(Item.metal_content), selectinload(Item.lot), selectinload(Item.valuations))
         )
     )
 
@@ -164,6 +164,9 @@ class TotalsOut(BaseModel):
     item_count: int
     pieces: int
     melt: Decimal
+    market: Decimal
+    market_items: int
+    valued_at_market: int
     cost: Decimal
     cost_estimated: Decimal
     current: Decimal
@@ -193,7 +196,7 @@ def portfolio_summary(principal: Principal = Depends(read_prices), db: Session =
         loc.id: item_svc.location_path(db, loc.id) or loc.name
         for loc in db.scalars(select(Location).where(Location.owner_id == principal.owner_id))
     }
-    p = valuation.portfolio(db, _owned_items(db, principal), spot, paths, TYPE_LABELS, METAL_LABELS)
+    p = valuation.portfolio(db, _owned_items(db, principal), spot, paths, TYPE_LABELS, METAL_LABELS, currency)
 
     def buckets(d) -> list[BucketOut]:
         out = [BucketOut(**{k: getattr(b, k) for k in BucketOut.model_fields}) for b in d.values()]
@@ -207,6 +210,9 @@ def portfolio_summary(principal: Principal = Depends(read_prices), db: Session =
             item_count=p.item_count,
             pieces=p.pieces,
             melt=q(p.melt),
+            market=q(p.market),
+            market_items=p.market_items,
+            valued_at_market=p.valued_at_market,
             cost=q(p.cost),
             cost_estimated=q(p.cost_estimated),
             current=q(p.current),
@@ -220,5 +226,5 @@ def portfolio_summary(principal: Principal = Depends(read_prices), db: Session =
         by_metal=buckets(p.by_metal),
         by_type=buckets(p.by_type),
         by_location=buckets(p.by_location),
-        market_values_available=False,
+        market_values_available=True,
     )

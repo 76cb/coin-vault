@@ -13,7 +13,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import Composition, Item
+from app.models import Valuation, Composition, Item
 
 CENT = Decimal("0.01")
 ZERO = Decimal(0)
@@ -43,6 +43,7 @@ class ItemValues:
     melt: Decimal | None  # None when the item has no metal content
     melt_missing_spot: list[str]
     market: Decimal | None
+    market_valuation: "Valuation | None"
     cost: Decimal | None
     current: Decimal | None
     rule: str
@@ -55,7 +56,25 @@ class ItemValues:
         return self.current - self.cost
 
 
-def item_values(db: Session, item: Item, spot: dict[str, Decimal], market: Decimal | None = None) -> ItemValues:
+_AUTO = object()
+
+
+def latest_valuation(item: Item, currency: str | None) -> Valuation | None:
+    """The newest market value in this currency (a value in another currency is ignored, not converted)."""
+    for v in item.valuations:  # ordered newest first
+        if currency is None or v.currency == currency:
+            return v
+    return None
+
+
+def item_values(
+    db: Session, item: Item, spot: dict[str, Decimal], market=_AUTO, currency: str | None = None
+) -> ItemValues:
+    """`market` is the whole item's market value; by default it comes from the item's newest valuation."""
+    valuation = None
+    if market is _AUTO:
+        valuation = latest_valuation(item, currency)
+        market = money(valuation.value_each * item.quantity) if valuation is not None else None
     per_unit = pure_per_unit(db, item)
     qty = Decimal(item.quantity)
     total = {m: v * qty for m, v in per_unit.items()}
@@ -90,6 +109,7 @@ def item_values(db: Session, item: Item, spot: dict[str, Decimal], market: Decim
         melt=melt,
         melt_missing_spot=missing,
         market=market,
+        market_valuation=valuation,
         cost=cost,
         current=current,
         rule=rule,
@@ -115,6 +135,8 @@ class Portfolio:
     pieces: int = 0
     melt: Decimal = ZERO
     market: Decimal = ZERO
+    market_items: int = 0  # items with a market value
+    valued_at_market: int = 0  # items whose current value is their market value
     cost: Decimal = ZERO
     cost_estimated: Decimal = ZERO
     current: Decimal = ZERO
@@ -136,12 +158,18 @@ def portfolio(
     location_paths: dict[int, str],
     type_labels: dict[str, str],
     metal_labels: dict[str, str],
+    currency: str | None = None,
 ) -> Portfolio:
     p = Portfolio()
     pure: dict[str, Decimal] = defaultdict(lambda: ZERO)
     for item in items:
-        v = item_values(db, item, spot)
+        v = item_values(db, item, spot, currency=currency)
         p.item_count += 1
+        if v.market is not None:
+            p.market += v.market
+            p.market_items += 1
+        if v.rule_applied == "market":
+            p.valued_at_market += 1
         p.pieces += item.quantity
         p.melt += v.melt or ZERO
         if v.cost is not None:
@@ -165,6 +193,7 @@ def portfolio(
             b.pieces += item.quantity
             b.pure_toz += oz
             b.melt += v.melt_by_metal.get(metal, ZERO)
+            b.current += v.melt_by_metal.get(metal, ZERO)  # by metal, value means metal value
         tb = p.by_type.setdefault(item.item_type, Bucket(item.item_type, type_labels.get(item.item_type, item.item_type)))
         loc_key = str(item.location_id) if item.location_id else "none"
         lb = p.by_location.setdefault(

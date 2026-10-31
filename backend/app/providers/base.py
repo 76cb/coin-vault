@@ -145,8 +145,9 @@ CATALOG: dict[str, ProviderInfo] = {
         rate_limited=False,
         docs_url="https://sold-comps.com/docs",
         key_url="https://sold-comps.com/dashboard/api-keys",
-        note="eBay sold listings for market value. Free plan: 100 requests a month. Comps searches arrive in Milestone 4; the key and usage work now.",
-        available_from=4,
+        note="eBay sold listings for market value: open an item and choose Search sold listings under Market value. Each search "
+        "uses one request (free plan: 100 a month). Usage is read from SoldComps after every search and daily.",
+        available_from=2,
     ),
 }
 
@@ -157,6 +158,14 @@ def http_client() -> httpx.Client:
         headers={"User-Agent": f"CoinVault/{__version__} (self-hosted)"},
         follow_redirects=False,
     )
+
+
+def sub_month(d: dt.datetime) -> dt.datetime:
+    """The same day and time one month earlier, clamped to the month's length."""
+    import calendar
+
+    year, month = (d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12)
+    return d.replace(year=year, month=month, day=min(d.day, calendar.monthrange(year, month)[1]))
 
 
 def parse_ts(value: str | None) -> dt.datetime | None:

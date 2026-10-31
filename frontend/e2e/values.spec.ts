@@ -48,7 +48,7 @@ test("dashboard shows totals without spot prices", async ({ page }) => {
   await signIn(page);
   await page.getByRole("link", { name: "Dashboard" }).click();
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-  await expect(page.getByText("Melt value of what you hold")).toBeVisible();
+  await expect(page.getByText("Collection value")).toBeVisible();
   await expect(page.getByText("No spot prices have been fetched yet")).toBeVisible();
   await expect(page.getByRole("heading", { name: "By type" })).toBeVisible();
 });
@@ -80,4 +80,31 @@ test("provider key is saved and never shown back", async ({ page }) => {
   await page.reload();
   await expect(page.locator("body")).not.toContainText("sc_e2e_secret");
   await expect(card.locator("code")).toHaveText("7f3a");
+});
+
+
+test("enter a market value by hand", async ({ page }) => {
+  const title = unique("1921 Peace Dollar");
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Quantity").fill("2");
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await expect(page.getByText("No market value yet")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Enter a value" }).click();
+  await page.getByLabel("Value of one piece").fill("55");
+  await expect(page.getByText("For all 2: $110.00")).toBeVisible();
+  await page.getByLabel("Source").fill("Dealer quote");
+  await page.getByRole("button", { name: "Save market value" }).click();
+
+  const panel = page.locator(".value-panel");
+  await expect(panel.getByText("$110.00").first()).toBeVisible();
+  await expect(panel.getByText("$55.00 each")).toBeVisible();
+  await expect(page.locator(".ledger")).toContainText("Dealer quote");
+  // SoldComps search needs a key; without one it says where to add it
+  await page.getByRole("tab", { name: "Search sold listings" }).click();
+  const prov = page.locator(".market-panel");
+  await expect(prov).toContainText(/SoldComps|Search eBay sold listings/);
 });
