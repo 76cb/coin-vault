@@ -445,6 +445,7 @@ def _photo_out(p: Photo) -> PhotoOut:
         created_at=p.created_at,
         urls=photo_urls(p.id, p.edits),
         edits=p.edits,
+        sha256=p.sha256,
     )
 
 

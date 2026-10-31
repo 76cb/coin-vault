@@ -11,6 +11,7 @@ import ItemPage from "./pages/ItemPage";
 import Login from "./pages/Login";
 import NewItem from "./pages/NewItem";
 import Settings from "./pages/Settings";
+import Photos from "./pages/Photos";
 import Upload from "./pages/Upload";
 
 export default function App() {
@@ -52,6 +53,7 @@ export default function App() {
         <nav className="mainnav">
           <NavLink to="/" end>Collection</NavLink>
           <NavLink to="/dashboard">Dashboard</NavLink>
+          <NavLink to="/photos">Photos</NavLink>
           <NavLink to="/upload">Upload photos</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
@@ -67,6 +69,7 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/items/new" element={<NewItem />} />
           <Route path="/items/:id" element={<ItemPage />} />
+          <Route path="/photos" element={<Photos />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="/settings" element={<Settings user={me.data.user.username} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

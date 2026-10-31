@@ -58,3 +58,73 @@ export function buildNumistaQuery(det: Record<string, unknown>, title: string): 
   return { q: q.slice(0, 120), year, mark: str("mint_mark") || undefined };
 }
 
+
+// --- Choosing the right Numista coin and issue -------------------------------------------------
+
+export interface Wants {
+  proof: boolean | null; // true: PR/PF or "proof"; false: MS, BU or Unc; null: not said
+  burnished: boolean; // "Burnished", or an SP grade
+  reverseProof: boolean;
+  type2: boolean; // "T2", "Type 2"
+  mark: string; // mint mark, upper case, or ""
+}
+
+/** What the owner's title, grade and details say about which version of a coin this is. */
+export function wantsFrom(text: string, mark?: string | null): Wants {
+  const reverseProof = /reverse\s*proof|\bRP\b/i.test(text);
+  const proofSaid = /\b(PR|PF)[\s-]?\d{1,2}\b|\bproof\b/i.test(text.replace(/reverse\s*proof/gi, "")) || reverseProof;
+  const msSaid = /\bMS[\s-]?\d{1,2}\b|\bBU\b|\bunc(irculated)?\b/i.test(text);
+  return {
+    proof: proofSaid ? true : msSaid ? false : null,
+    burnished: /\bburnished\b|\bSP[\s-]?\d{1,2}\b/i.test(text),
+    reverseProof,
+    type2: /\bT-?2\b|\btype\s*(2|ii)\b/i.test(text),
+    mark: (mark ?? "").trim().toUpperCase(),
+  };
+}
+
+interface IssueLike { year: number | null; gregorian_year: number | null; mint_letter: string | null; comment: string | null }
+
+/** How well an issue fits: mint mark first, then proof, burnished or reverse proof as the owner described it. */
+export function scoreIssue(i: IssueLike, w: Wants): number {
+  const letter = (i.mint_letter ?? "").toUpperCase();
+  const c = (i.comment ?? "").toLowerCase();
+  const isReverse = c.includes("reverse proof");
+  const isProof = !isReverse && /\bproof\b/.test(c);
+  const isBurnished = c.includes("burnished");
+  let s = 0;
+  if (w.mark) s += letter === w.mark ? 4 : letter ? -4 : -1;
+  else s += letter ? -1 : 2;
+  if (isReverse) s += w.reverseProof ? 5 : -5;
+  if (isProof) s += w.proof === true && !w.reverseProof ? 3 : w.proof === false ? -3 : -1;
+  if (isBurnished) s += w.burnished ? 3 : -2;
+  if (!isProof && !isReverse && !isBurnished && (w.proof === true || w.burnished)) s -= 2;
+  return s;
+}
+
+const issueYear = (i: IssueLike) => i.year ?? i.gregorian_year;
+
+/** The issues of one year, best fit first; and the best one's index when it clearly beats the rest. */
+export function rankIssues<T extends IssueLike>(issues: T[], year: number | null, w: Wants): { ranked: T[]; best: T | null } {
+  const pool = year ? issues.filter((i) => issueYear(i) === year) : issues;
+  const scored = pool.map((i) => ({ i, s: scoreIssue(i, w) })).sort((a, b) => b.s - a.s);
+  const best = scored.length === 1 || (scored.length > 1 && scored[0].s > scored[1].s) ? scored[0].i : null;
+  return { ranked: scored.map((x) => x.i), best };
+}
+
+interface HitLike { title: string | null; min_year: number | null; max_year: number | null }
+
+/** Search results with the likeliest coin first: years that include the coin's, Type 2 or proof as described. */
+export function rankHits<T extends HitLike>(hits: T[], year: number | null, w: Wants): T[] {
+  const score = (h: T) => {
+    const t = (h.title ?? "").toLowerCase();
+    let s = 0;
+    if (year && h.min_year && h.max_year) s += year >= h.min_year && year <= h.max_year ? 3 : -3;
+    const saysType2 = /type\s*(2|ii)\b/.test(t);
+    if (w.type2) s += saysType2 ? 3 : /type\s*(1|i)\b/.test(t) ? -2 : 0;
+    else if (saysType2 && year && year < 2021) s -= 1;
+    if (/\bproof\b/.test(t)) s += w.proof === true ? 2 : w.proof === false ? -2 : 0;
+    return s;
+  };
+  return hits.map((h, n) => ({ h, n, s: score(h) })).sort((a, b) => b.s - a.s || a.n - b.n).map((x) => x.h);
+}

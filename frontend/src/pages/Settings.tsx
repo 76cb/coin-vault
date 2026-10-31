@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { api, ApiToken } from "../api";
 import { PriceSettings, Providers } from "../components/Providers";
 import { useThemeChoice } from "../components/ThemeToggle";
-import { ThemeChoice } from "../theme";
+import { getPhotoFit, PhotoFit, setPhotoFit, ThemeChoice } from "../theme";
 
 const SCOPES: [string, string][] = [
   ["items:read", "Read items"],
@@ -34,6 +34,7 @@ export default function Settings({ user }: { user: string }) {
 
 function Appearance() {
   const [choice, set] = useThemeChoice();
+  const [fit, setFit] = useState<PhotoFit>(getPhotoFit);
   const options: [ThemeChoice, string][] = [
     ["system", "Same as device"],
     ["light", "Light"],
@@ -50,6 +51,15 @@ function Appearance() {
         ))}
       </div>
       <p className="hint">Remembered in this browser. The moon or sun button in the header switches too.</p>
+      <h3 className="sub-h">Photos in the collection</h3>
+      <div className="segmented" role="radiogroup" aria-label="Photos in the collection">
+        {([["fill", "Fill the tile"], ["whole", "Show the whole photo"]] as [PhotoFit, string][]).map(([v, label]) => (
+          <button key={v} type="button" role="radio" aria-checked={fit === v} className={fit === v ? "on" : ""} onClick={() => { setPhotoFit(v); setFit(v); }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="hint">Fill crops the edges to make a neat grid. To choose exactly what shows, open the item and use Edit on the photo (Square crop).</p>
     </section>
   );
 }

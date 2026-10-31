@@ -90,6 +90,7 @@ export default function QuickStart({ onUse }: { onUse: (defaults: Partial<FormSt
         numista ? (
           <NumistaSearch
             start={numistaQuery(text, result)}
+            hint={[text, result?.condition?.grade_text ?? "", ...(result?.condition?.designations ?? [])].join(" ")}
             actionLabel="Fill in from Numista"
             doneLabel="Filled in below."
             onPick={(t, issue) => onUse(defaultsFromNumista(t, issue, result ? defaultsFromDescription(result) : { title: text.trim() }))}

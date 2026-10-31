@@ -331,9 +331,11 @@ label.check input { width: 1.15rem; min-height: 0; height: 1.15rem; accent-color
   place-items: center;
 }
 .flip-window img { width: 100%; height: 100%; object-fit: cover; }
-/* a photo is shown whole: slabs, bars, sets and product shots aren't round */
-.flip-window.has-photo { inset: 6%; border-radius: var(--r); background: transparent; box-shadow: none; }
-.flip-window.has-photo img { object-fit: contain; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45)); }
+/* a photo fills the square tile edge to edge (Settings, Appearance: or is shown whole inside it) */
+.flip-window.has-photo { inset: 0; border-radius: var(--r); background: var(--well); box-shadow: none; }
+.flip-window.has-photo img { object-fit: cover; }
+:root[data-photo-fit="whole"] .flip-window.has-photo { inset: 6%; background: transparent; }
+:root[data-photo-fit="whole"] .flip-window.has-photo img { object-fit: contain; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45)); }
 .flip-card:hover .flip-window.has-photo { box-shadow: none; }
 .flip-card:hover .flip:has(.has-photo) { box-shadow: inset 0 0 0 1px var(--champagne-dim); }
 .flip-empty { color: var(--on-vault-2); font-size: var(--step--1); }
@@ -707,3 +709,46 @@ table.figures { border-collapse: collapse; width: 100%; font-size: var(--step--1
   .numista-coin { grid-template-columns: auto auto; }
   .numista-coin > div { grid-column: 1 / -1; }
 }
+.sub-h { font-size: var(--step-0); margin: 1.4rem 0 0.55rem; }
+
+/* Photo library: every uploaded photo, on the Photos page and in an item's "Choose from your photos" */
+.library { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
+.library-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.library-bar .segmented { margin: 0; }
+.library-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+.library-tile { display: flex; flex-direction: column; width: 100%; padding: 0; border: 1px solid var(--hairline); background: var(--surface); text-align: left; font-weight: 400; min-height: 0; overflow: hidden; }
+.library-tile img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--well); }
+.library-caption { display: block; width: 100%; text-align: left; box-sizing: border-box; font-size: 0.75rem; color: var(--ink-2); padding: 0.3rem 0.45rem 0.35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-tile.is-selected { outline: 2px solid var(--accent-line); outline-offset: 1px; border-color: var(--accent-line); }
+.library-tile:disabled { opacity: 0.45; }
+.library-pages { display: flex; gap: 0.6rem; align-items: center; justify-content: center; }
+.photos-layout { display: grid; gap: 1.5rem; align-items: start; }
+.photos-layout.has-detail { grid-template-columns: minmax(0, 1fr) 340px; }
+.photo-detail { position: sticky; top: 1rem; display: flex; flex-direction: column; gap: 0.9rem; background: var(--surface); border: 1px solid var(--hairline); border-top: 2px solid var(--champagne); padding: 1rem; }
+.photo-detail-img img { width: 100%; max-height: 340px; object-fit: contain; background: var(--well); display: block; }
+.photo-detail p { margin: 0; }
+.photo-detail-meta { display: grid; gap: 0.3rem; }
+.photo-uses { margin: 0.2rem 0 0; padding-left: 1.1rem; }
+.photo-put { display: flex; flex-direction: column; gap: 0.6rem; border-top: 1px solid var(--hairline); padding-top: 0.8rem; }
+.photo-put h2 { font-size: var(--step-0); margin: 0; }
+.item-pick { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; max-height: 16rem; overflow-y: auto; }
+.item-pick button { width: 100%; display: grid; grid-template-columns: 40px 1fr; gap: 0.6rem; align-items: center; text-align: left; font-weight: 400; padding: 0.3rem 0.5rem; min-height: 48px; }
+.item-pick img, .item-pick-empty { width: 40px; height: 40px; object-fit: cover; background: var(--well); display: block; border-radius: var(--r); }
+.item-pick button.is-selected { border-color: var(--accent-line); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.photo-put-opts { display: flex; flex-direction: column; gap: 0.6rem; }
+.pm-library { align-self: flex-start; margin: 0.5rem 0; }
+.library-pick { display: flex; flex-direction: column; gap: 0.8rem; border: 1px solid var(--hairline); background: var(--surface); padding: 1rem; margin-bottom: 1rem; }
+.library-pick .library-grid { max-height: 26rem; overflow-y: auto; }
+.library-pick-bar { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: flex-end; }
+.library-pick-bar label:not(.check) { margin: 0; }
+@media (max-width: 860px) { .photos-layout.has-detail { grid-template-columns: 1fr; } .photo-detail { position: static; order: -1; } }
+
+/* Numista: the issues of the coin's year, best fit marked */
+.issue-pick { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.issue-pick legend { font-weight: 700; font-size: var(--step--1); padding: 0; margin-bottom: 0.4rem; }
+.issue-pick legend .hint { font-weight: 400; }
+.issue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; max-height: 17rem; overflow-y: auto; }
+.issue-list button { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; text-align: left; font-weight: 400; min-height: 42px; padding: 0.35rem 0.75rem; }
+.issue-list button.is-selected { border-color: var(--accent-line); box-shadow: inset 0 0 0 1px var(--accent-line); font-weight: 700; }
+.issue-best { flex: none; font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.5rem; border-radius: var(--r-pill); background: var(--gold-tint); color: var(--gold); border: 1px solid var(--champagne-dim); }
+.issue-more { display: flex; gap: 0.5rem; flex-wrap: wrap; }

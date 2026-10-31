@@ -197,6 +197,7 @@ class PhotoOut(_Base):
     created_at: dt.datetime
     urls: dict[str, str]
     edits: dict[str, Any] | None = None
+    sha256: str | None = None  # the file, shared when the same photo is on several items
 
 
 class DocumentSummary(_Base):

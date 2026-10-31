@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, Described, Item, NumistaHit, NumistaIssue, NumistaType } from "../api";
-import { buildNumistaQuery, NumistaStart } from "../numistaQuery";
+import { buildNumistaQuery, NumistaStart, rankHits, rankIssues, wantsFrom } from "../numistaQuery";
 
 export type { NumistaStart };
 
@@ -26,23 +26,13 @@ function issueLabel(i: NumistaIssue): string {
   return parts.join(", ");
 }
 
-/** The issue matching a year (and mint mark), if exactly one does; or the only issue there is. */
-function matchIssue(t: NumistaType, start: NumistaStart): string {
-  const y = Number(start.year);
-  const mark = (start.mark ?? "").toUpperCase();
-  let match = t.issues.filter((i) => (i.year ?? i.gregorian_year) === y);
-  const marked = match.filter((i) => (i.mint_letter ?? "").toUpperCase() === mark);
-  if (mark && marked.length) match = marked;
-  else if (!mark && match.length > 1) match = match.filter((i) => !i.mint_letter).length === 1 ? match.filter((i) => !i.mint_letter) : match;
-  return match.length === 1 ? String(match[0].id) : t.issues.length === 1 ? String(t.issues[0].id) : "";
-}
-
 /**
  * Search the Numista catalogue, pick a coin and its issue, and hand them to onPick. Each search or newly opened
  * coin uses Numista requests (repeats come from the app's cache).
  */
 export default function NumistaSearch({
   start,
+  hint = "",
   typeId,
   issueId: savedIssue,
   actionLabel,
@@ -51,6 +41,7 @@ export default function NumistaSearch({
   onCancel,
 }: {
   start: NumistaStart;
+  hint?: string; // the owner's title and grade: says proof, burnished, Type 2 and so on
   typeId?: number | null; // open this coin straight away (to pick or change its issue)
   issueId?: number | null;
   actionLabel: string;
@@ -68,7 +59,10 @@ export default function NumistaSearch({
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState(false);
   const [widened, setWidened] = useState<string | null>(null);
+  const [allIssues, setAllIssues] = useState(false);
   const edited = useRef(false);
+  const wants = wantsFrom(`${hint} ${start.q}`, start.mark);
+  const yearNum = /^\d{3,4}$/.test(year.trim()) ? Number(year.trim()) : /^\d{3,4}$/.test(start.year) ? Number(start.year) : null;
 
   // the title reader may answer after this opens: take its words unless the owner typed here
   useEffect(() => {
@@ -96,7 +90,9 @@ export default function NumistaSearch({
     setChosen(t);
     setApplied(false);
     const saved = savedIssue && t.issues.some((i) => i.id === savedIssue) ? String(savedIssue) : "";
-    setIssueId(saved || matchIssue(t, { ...start, year: year || start.year }));
+    const { ranked, best } = rankIssues(t.issues, yearNum, wants);
+    setAllIssues(ranked.length === 0);
+    setIssueId(saved || (best ? String(best.id) : t.issues.length === 1 ? String(t.issues[0].id) : ""));
   };
 
   useEffect(() => {
@@ -121,7 +117,7 @@ export default function NumistaSearch({
       setWidened(null);
     }
     if (r) {
-      setHits(r.types);
+      setHits(rankHits(r.types, yearNum, wants));
       setTotal(r.count);
       setChosen(null);
     }
@@ -193,16 +189,7 @@ export default function NumistaSearch({
               {chosen.url && <p><a href={chosen.url} target="_blank" rel="noreferrer">Numista page</a></p>}
             </div>
           </div>
-          {chosen.issues.length > 0 && (
-            <label>
-              Which issue
-              <select value={issueId} onChange={(e) => { setIssueId(e.target.value); setApplied(false); }}>
-                <option value="">Not sure yet</option>
-                {chosen.issues.map((i) => <option key={i.id} value={i.id}>{issueLabel(i)}</option>)}
-              </select>
-              <span className="hint">The issue sets the year and mint mark, and Numista prices each issue separately.</span>
-            </label>
-          )}
+          {chosen.issues.length > 0 && <IssuePicker type={chosen} year={yearNum} wants={wants} value={issueId} all={allIssues} onAll={setAllIssues} onChange={(v) => { setIssueId(v); setApplied(false); }} />}
           <div className="numista-actions">
             {typeId ? (
               onCancel && <button type="button" className="ghost small" onClick={onCancel}>Close</button>
@@ -221,5 +208,47 @@ export default function NumistaSearch({
         <button type="button" className="ghost small numista-close" onClick={onCancel}>Close</button>
       )}
     </div>
+  );
+}
+
+/** The issues of the coin's year as a short list, best fit first and marked; every year on request. */
+function IssuePicker({ type, year, wants, value, all, onAll, onChange }: {
+  type: NumistaType; year: number | null; wants: ReturnType<typeof wantsFrom>; value: string; all: boolean;
+  onAll: (v: boolean) => void; onChange: (v: string) => void;
+}) {
+  const { ranked, best } = rankIssues(type.issues, year, wants);
+  const shown = all || ranked.length === 0
+    ? [...type.issues].sort((a, b) => (b.year ?? b.gregorian_year ?? 0) - (a.year ?? a.gregorian_year ?? 0))
+    : ranked;
+  return (
+    <fieldset className="issue-pick">
+      <legend>
+        Which issue
+        <span className="hint">
+          {" "}{all || ranked.length === 0 ? `all ${type.issues.length}` : `${ranked.length} for ${year}`}
+          {wants.proof === true ? ", you said proof" : wants.proof === false ? ", you said MS (not proof)" : ""}
+          {wants.burnished ? ", burnished" : ""}{wants.mark ? `, mint mark ${wants.mark}` : ""}
+        </span>
+      </legend>
+      <ul className="issue-list" role="radiogroup" aria-label="Which issue">
+        {shown.map((i) => (
+          <li key={i.id}>
+            <button type="button" role="radio" aria-checked={String(i.id) === value} className={String(i.id) === value ? "is-selected" : ""} onClick={() => onChange(String(i.id))}>
+              <span>{issueLabel(i)}</span>
+              {best && best.id === i.id && !all && <span className="issue-best">Best match</span>}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="issue-more">
+        {ranked.length > 0 && (
+          <button type="button" className="ghost small" onClick={() => onAll(!all)}>
+            {all ? `Only ${year}` : `Show every year (${type.issues.length})`}
+          </button>
+        )}
+        {value && <button type="button" className="ghost small" onClick={() => onChange("")}>Not sure</button>}
+      </div>
+      <span className="hint">The issue sets the year and mint mark, and Numista prices each issue separately.</span>
+    </fieldset>
   );
 }

@@ -7,9 +7,10 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
-import { applyTheme } from "./theme";
+import { applyPhotoFit, applyTheme } from "./theme";
 
 applyTheme();
+applyPhotoFit();
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: (count, err: unknown) => (err as { status?: number })?.status !== 401 && count < 2, staleTime: 15_000 } },

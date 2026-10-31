@@ -230,7 +230,7 @@ test("find a coin on Numista and fill the form from it", async ({ page }) => {
   await expect(page.getByLabel("Year", { exact: true }).first()).toHaveValue("1858");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByRole("button", { name: /5 Cents - Victoria/ }).click();
-  await expect(page.getByLabel("Which issue")).toHaveValue("9001"); // the year from the title picks it
+  await expect(page.getByRole("radio", { name: /^1858/ })).toHaveAttribute("aria-checked", "true"); // the year picks it
   await page.getByRole("button", { name: "Fill in from Numista" }).click();
 
   await expect(page.getByLabel("Country")).toHaveValue("Canada");
@@ -277,7 +277,7 @@ test("link an existing coin to Numista and save its estimate", async ({ page }) 
   await expect(page.getByLabel("Search Numista")).toHaveValue("Canada 5 Cents");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByRole("button", { name: /5 Cents - Victoria/ }).click();
-  await expect(page.getByLabel("Which issue")).toHaveValue("9001");
+  await expect(page.getByRole("radio", { name: /^1858/ })).toHaveAttribute("aria-checked", "true");
   await page.getByRole("button", { name: "Link and get estimate" }).click();
   await expect(page.getByText("Saved Numista's estimate: $30.00 each.")).toBeVisible();
   const details = (patched as unknown as { details: Record<string, unknown> }).details;
@@ -296,4 +296,39 @@ test("a listing title becomes a short Numista search", async ({ page }) => {
   await page.getByRole("button", { name: "Look this up on Numista" }).click();
   await expect(page.getByLabel("Search Numista")).toHaveValue("American Silver Eagle");
   await expect(page.getByLabel("Year", { exact: true }).first()).toHaveValue("2021");
+});
+
+test("a Type 2 MS70 Silver Eagle picks the right Numista coin and issue", async ({ page }) => {
+  const eagle = (id: number, title: string, min: number, max: number) => ({ id, title, issuer: "United States", min_year: min, max_year: max, obverse_thumbnail: null, reverse_thumbnail: null });
+  await page.route("**/api/v1/numista/search?*", (route) => route.fulfill({ json: { count: 2, types: [
+    eagle(1, '1 Dollar "American Silver Eagle" (Bullion Coin)', 1986, 2021),
+    eagle(2, '1 Dollar "American Silver Eagle" (Type 2; Bullion Coin)', 2021, 2026),
+  ] } }));
+  await page.route("**/api/v1/numista/types/2", (route) => route.fulfill({ json: {
+    id: 2, url: null, title: '1 Dollar "American Silver Eagle" (Type 2; Bullion Coin)', issuer: "United States", min_year: 2021, max_year: 2026,
+    denomination: "1 Dollar", composition: "Silver (.999)", weight_g: "31.103", size_mm: "40.6", references: [], obverse_thumb: null, reverse_thumb: null,
+    issues: [
+      { id: 21, year: 2021, gregorian_year: 2021, mint_letter: null, mintage: 9000000, comment: "No Mint Mark, Minted at West Point" },
+      { id: 22, year: 2021, gregorian_year: 2021, mint_letter: "W", mintage: null, comment: "Proof" },
+      { id: 23, year: 2021, gregorian_year: 2021, mint_letter: "W", mintage: null, comment: "Burnished Uncirculated" },
+      { id: 24, year: 2022, gregorian_year: 2022, mint_letter: null, mintage: null, comment: "No Mint Mark" },
+    ],
+    item_type: "bullion", details: { country: "United States", denomination: "1 Dollar", numista_id: 2 },
+    metal: { metal: "Ag", gross_weight_g: "31.103", fineness: "0.9990" },
+  } }));
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.locator("#qs-text").fill("2021 $1 Silver Eagle T2 First Production PCGS MS70 Legends Life Robert Brazile");
+  await expect(page.locator(".qs-found")).toContainText("American Silver Eagle");
+  await page.getByRole("button", { name: "Look this up on Numista" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  // Type 2 is listed first for a "T2" title
+  await expect(page.locator(".numista-hits li").first()).toContainText("Type 2");
+  await page.locator(".numista-hits li").first().getByRole("button").click();
+  // only 2021's three issues, and the plain bullion one chosen for an MS grade
+  await expect(page.locator(".issue-list li")).toHaveCount(3);
+  await expect(page.getByRole("radio", { name: /No Mint Mark/ })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".issue-best")).toHaveCount(1);
+  await page.getByRole("button", { name: "Show every year (4)" }).click();
+  await expect(page.locator(".issue-list li")).toHaveCount(4);
 });

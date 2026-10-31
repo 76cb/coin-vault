@@ -1,9 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { api, Item, Photo, PhotoRole, ROLE_LABELS } from "../api";
+import { api, Item, LibraryFile, Photo, PhotoRole, ROLE_LABELS } from "../api";
 import DropZone from "./DropZone";
 import PhotoEditor from "./PhotoEditor";
+import PhotoLibrary from "./PhotoLibrary";
 import { DuplicateNote, QualityNote } from "./QualityNote";
 
 export default function PhotoManager({ item }: { item: Item }) {
@@ -12,6 +13,7 @@ export default function PhotoManager({ item }: { item: Item }) {
   const [error, setError] = useState<string | null>(null);
   const [lastUpload, setLastUpload] = useState<Photo[]>([]);
   const [editing, setEditing] = useState<Photo | null>(null);
+  const [picking, setPicking] = useState(false);
   const photos = item.photos;
   const refresh = () => qc.invalidateQueries({ queryKey: ["item", item.id] });
 
@@ -51,6 +53,19 @@ export default function PhotoManager({ item }: { item: Item }) {
           })
         }
       />
+      <button type="button" className="ghost small pm-library" disabled={busy} onClick={() => setPicking(!picking)}>
+        {picking ? "Close your photos" : "Choose from your photos"}
+      </button>
+      {picking && (
+        <LibraryPick
+          item={item}
+          onAdded={async () => {
+            await refresh();
+            await qc.invalidateQueries({ queryKey: ["library"] });
+            await qc.invalidateQueries({ queryKey: ["items"] });
+          }}
+        />
+      )}
       {error && <p className="error" role="alert">{error}</p>}
       {photos.length > 0 && (
         <ol className="photo-list">
@@ -106,5 +121,52 @@ export default function PhotoManager({ item }: { item: Item }) {
         />
       )}
     </section>
+  );
+}
+
+/** Pick a photo you already uploaded (another item's, or one waiting in Upload photos) and add it here. */
+function LibraryPick({ item, onAdded }: { item: Item; onAdded: () => Promise<void> }) {
+  const [file, setFile] = useState<LibraryFile | null>(null);
+  const [role, setRole] = useState<PhotoRole>(item.photos.length ? "other" : "obverse");
+  const [cover, setCover] = useState(item.photos.length === 0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const add = async () => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.addFromLibrary(item.id, { sha256: file.sha256, role, make_cover: cover });
+      await onAdded();
+      setNote(`Added ${file.filename ?? "the photo"}.`);
+      setFile(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="library-pick">
+      <PhotoLibrary selected={file?.sha256 ?? null} onSelect={(f) => { setFile(f); setNote(null); }} exclude={item.photos.map((p) => p.sha256 ?? "")} />
+      <div className="library-pick-bar">
+        <label>
+          As
+          <select value={role} onChange={(e) => setRole(e.target.value as PhotoRole)}>
+            {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={cover} onChange={(e) => setCover(e.target.checked)} />
+          Make it the cover photo
+        </label>
+        <button type="button" className="primary" disabled={!file || busy} onClick={add}>
+          {busy ? "Adding…" : file ? "Add this photo" : "Choose a photo above"}
+        </button>
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {note && <p className="success">{note}</p>}
+    </div>
   );
 }

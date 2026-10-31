@@ -414,11 +414,12 @@ function NumistaValue({ item, onChanged }: { item: Item; onChanged: () => Promis
       {error && <p className="error" role="alert">{error}</p>}
       {note && <p className="success">{note}</p>}
       {mode === "find" && (
-        <NumistaSearch start={numistaQueryForItem(item)} actionLabel={action} doneLabel="Linked." onPick={link} onCancel={() => setMode(null)} />
+        <NumistaSearch start={numistaQueryForItem(item)} hint={hintFor(item)} actionLabel={action} doneLabel="Linked." onPick={link} onCancel={() => setMode(null)} />
       )}
       {mode === "issue" && numistaId && (
         <NumistaSearch
           start={numistaQueryForItem(item)}
+          hint={hintFor(item)}
           typeId={numistaId}
           issueId={issueId}
           actionLabel={action}
@@ -429,4 +430,10 @@ function NumistaValue({ item, onChanged }: { item: Item; onChanged: () => Promis
       )}
     </div>
   );
+}
+
+/** The words that tell versions apart: the title, grade and designations ("PR70 DCAM", "SP69", "T2"). */
+function hintFor(item: Item): string {
+  const c = item.condition;
+  return [item.title, c?.grade_text, ...(c?.designations ?? []), String((item.details as Record<string, unknown>).variety_notes ?? "")].filter(Boolean).join(" ");
 }

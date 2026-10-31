@@ -35,3 +35,29 @@ export function setChoice(choice: ThemeChoice): void {
   applyTheme(choice);
   window.dispatchEvent(new CustomEvent("cv:theme", { detail: choice }));
 }
+
+// How collection tiles show a photo: filling the square tile (cropped at the edges) or whole inside it.
+export type PhotoFit = "fill" | "whole";
+const FIT_KEY = "cv-photo-fit";
+
+export function getPhotoFit(): PhotoFit {
+  try {
+    return localStorage.getItem(FIT_KEY) === "whole" ? "whole" : "fill";
+  } catch {
+    return "fill";
+  }
+}
+
+export function applyPhotoFit(fit: PhotoFit = getPhotoFit()): void {
+  document.documentElement.setAttribute("data-photo-fit", fit);
+}
+
+export function setPhotoFit(fit: PhotoFit): void {
+  try {
+    if (fit === "fill") localStorage.removeItem(FIT_KEY);
+    else localStorage.setItem(FIT_KEY, fit);
+  } catch {
+    /* private mode: lasts until the page is closed */
+  }
+  applyPhotoFit(fit);
+}

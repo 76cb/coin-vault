@@ -63,6 +63,7 @@ export interface Photo {
   original_filename: string | null;
   urls: { thumb: string; medium: string; original: string; unedited?: string; edited?: string };
   edits?: Partial<import("./photoEdit").Edits> | null;
+  sha256?: string | null;
   duplicate_of_item_id?: number | null;
   duplicate_kind?: "exact" | "similar" | null;
 }
@@ -509,6 +510,18 @@ export interface NumistaType {
   metal: { metal: Metal; gross_weight_g: string; fineness: string } | null;
 }
 
+export interface LibraryFile {
+  sha256: string;
+  urls: { thumb: string; medium: string; original: string };
+  width: number;
+  height: number;
+  bytes: number;
+  filename: string | null;
+  created_at: string;
+  items: { item_id: number; title: string; photo_id: number; role: PhotoRole; is_cover: boolean }[];
+  waiting_upload: boolean;
+}
+
 /** A PCGS cert number on its own ("12345678", "cert #12345678", "PCGS 12345678"), or null. */
 export function certNumber(text: string): string | null {
   const m = text.trim().match(/^(?:pcgs\s*)?(?:cert(?:ificate)?\s*(?:#|no\.?|number)?\s*)?#?\s*(\d{6,10})$/i);
@@ -597,6 +610,10 @@ export const api = {
   reorderPhotos: (itemId: number, photo_ids: number[]) =>
     request<Photo[]>("PUT", `${A}/items/${itemId}/photos/order`, { photo_ids }),
   setCover: (itemId: number, photo_id: number) => request<void>("PUT", `${A}/items/${itemId}/cover`, { photo_id }),
+  library: (show: "all" | "on_items" | "not_on_items", page = 1, perPage = 60) =>
+    request<{ total: number; files: LibraryFile[] }>("GET", `${A}/library?${new URLSearchParams({ show, page: String(page), per_page: String(perPage) })}`),
+  addFromLibrary: (itemId: number, body: { sha256: string; role: PhotoRole; make_cover: boolean }) =>
+    request<Photo>("POST", `${A}/items/${itemId}/photos/from-library`, body),
   setPhotoEdits: (id: number, edits: unknown) => request<Photo>("PUT", `${A}/photos/${id}/edits`, { edits }),
   deletePhoto: (id: number) => request<void>("DELETE", `${A}/photos/${id}`),
 
