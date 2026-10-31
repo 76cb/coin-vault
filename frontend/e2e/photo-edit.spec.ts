@@ -44,3 +44,32 @@ test("crop, turn and brighten a photo, then reset it", async ({ page }) => {
   await expect(row).toContainText("1300×1300");
   await expect(row).not.toContainText("edited");
 });
+
+test("cut a coin out as a circle", async ({ page }) => {
+  const title = unique("Circle cut");
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.getByLabel("Title", { exact: true }).fill(title);
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("0007_rev.jpg")]);
+  const row = page.locator(".photo-list li").first();
+  await expect(row).toContainText("1300×1300");
+
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByRole("button", { name: "Find the coin" }).click();
+  await expect(editor.getByText("Found it.")).toBeVisible();
+  await expect(editor.getByRole("button", { name: "Circle" })).toHaveAttribute("aria-pressed", "true");
+  await expect(editor.locator(".pe-cut-shade")).toBeVisible();
+  await editor.getByRole("button", { name: "White" }).click();
+  await editor.getByRole("button", { name: "Save photo" }).click();
+  await expect(editor).toBeHidden();
+  // the test coin's rim is 80% of the photo across
+  await expect(row).toContainText(/10[34]\d×10[34]\d, edited/);
+
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(editor.getByRole("button", { name: "Circle" })).toHaveAttribute("aria-pressed", "true"); // remembered
+  await expect(editor.getByRole("button", { name: "White" })).toHaveAttribute("aria-pressed", "true");
+  await editor.getByRole("button", { name: "Cancel" }).click();
+});

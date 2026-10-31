@@ -360,11 +360,21 @@ class PhotoEdits(_Base):
     saturation: int = Field(default=0, ge=-100, le=100)
     warmth: int = Field(default=0, ge=-100, le=100)
     sharpness: int = Field(default=0, ge=0, le=100)
+    circle: bool = False  # cut out the circle inside the crop
+    background: Literal["clear", "white", "black"] = "clear"  # outside the circle
 
     def is_identity(self) -> bool:
         c = self.crop
         whole = c is None or (c.x <= 0.0001 and c.y <= 0.0001 and c.w >= 0.9999 and c.h >= 0.9999)
-        return whole and self.model_copy(update={"crop": None}) == PhotoEdits()
+        return whole and not self.circle and self.model_copy(update={"crop": None, "background": "clear"}) == PhotoEdits()
+
+
+class FindCoinIn(_Base):
+    """The turns and straighten the editor has now: the crop found is in that frame."""
+
+    rotate: Literal[0, 90, 180, 270] = 0
+    flip: bool = False
+    straighten: float = Field(default=0, ge=-45, le=45)
 
 
 class PhotoEditsIn(_Base):

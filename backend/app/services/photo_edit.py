@@ -13,6 +13,8 @@ Colour on 0..1 values per channel:
   sharpness    v += 1.5 * s/100 * (v - box3x3(v)), on the output size
 Straighten: rotate by `straighten` degrees (clockwise), then zoom so the frame has no empty corners.
 Crop: x, y, w, h as fractions (0..1) of the straightened frame.
+Circle (last): everything outside the circle inscribed in the crop becomes the background: clear
+(transparent), white or black. The edge is anti-aliased (mask drawn at 4x, then reduced).
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ import math
 from typing import Any
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from app.services import storage
 
@@ -104,6 +106,26 @@ def _colour(img: Image.Image, e: dict[str, Any]) -> Image.Image:
     return out
 
 
+BACKGROUNDS = {"white": (255, 255, 255), "black": (0, 0, 0)}
+
+
+def _circle(img: Image.Image, e: dict[str, Any]) -> Image.Image:
+    if not e.get("circle"):
+        return img
+    w, h = img.size
+    big = Image.new("L", (w * 4, h * 4), 0)
+    ImageDraw.Draw(big).ellipse((0, 0, w * 4 - 1, h * 4 - 1), fill=255)
+    mask = big.resize((w, h), Image.Resampling.LANCZOS)
+    rgb = img.convert("RGB")
+    bg = e.get("background", "clear")
+    if bg in BACKGROUNDS:
+        out = Image.new("RGB", (w, h), BACKGROUNDS[bg])
+        out.paste(rgb, (0, 0), mask)
+        return out
+    rgb.putalpha(mask)
+    return rgb
+
+
 def render(original: Image.Image, edits: dict[str, Any], edge: int | None) -> Image.Image:
     """The edited image, at most `edge` pixels on its long side (None: full size)."""
     img = ImageOps.exif_transpose(original)
@@ -112,7 +134,7 @@ def render(original: Image.Image, edits: dict[str, Any], edge: int | None) -> Im
     img = _geometry(img, edits)
     if edge:
         img.thumbnail((edge, edge), Image.Resampling.LANCZOS)
-    return _colour(img, edits)  # sharpening is judged at the size shown
+    return _circle(_colour(img, edits), edits)  # sharpening is judged at the size shown
 
 
 def write_edited(storage_key: str, sha256: str, edits: dict[str, Any]) -> tuple[str, int, int]:
@@ -133,14 +155,118 @@ def write_edited(storage_key: str, sha256: str, edits: dict[str, Any]) -> tuple[
     return ehash, width, height
 
 
-def full_jpeg(storage_key: str, edits: dict[str, Any]) -> bytes:
-    """The edited photo at full size, for download."""
+def full_image(storage_key: str, edits: dict[str, Any]) -> tuple[bytes, str, str]:
+    """The edited photo at full size, for download: (bytes, media type, file extension).
+    A JPEG, or a PNG when it's cut out as a circle on a clear background (a JPEG can't be transparent)."""
     with Image.open(storage.path_for(storage_key)) as original:
         original.load()
-        img = render(original, edits, None).convert("RGB")
+        img = render(original, edits, None)
     buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=92, optimize=True)
-    return buf.getvalue()
+    if img.mode == "RGBA":
+        img.save(buf, "PNG", optimize=True)
+        return buf.getvalue(), "image/png", "png"
+    img.convert("RGB").save(buf, "JPEG", quality=92, optimize=True)
+    return buf.getvalue(), "image/jpeg", "jpg"
+
+
+# --- Finding the coin --------------------------------------------------------------------------
+
+DETECT_EDGE = 256
+
+
+def _sobel(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    p = np.pad(a, 1, mode="edge")
+    gx = (p[:-2, 2:] + 2 * p[1:-1, 2:] + p[2:, 2:]) - (p[:-2, :-2] + 2 * p[1:-1, :-2] + p[2:, :-2])
+    gy = (p[2:, :-2] + 2 * p[2:, 1:-1] + p[2:, 2:]) - (p[:-2, :-2] + 2 * p[:-2, 1:-1] + p[:-2, 2:])
+    return gx, gy
+
+
+def _detect(img: Image.Image, edge: int, r_lo: float, r_hi: float, prefer_large: bool) -> tuple[float, float, float, float] | None:
+    """(centre x, centre y, radius, score) in the image's pixels; radii searched as fractions of its shorter side."""
+    small = img.convert("L")
+    small.thumbnail((edge, edge), Image.Resampling.BILINEAR)
+    scale = img.width / small.width
+    small = small.filter(ImageFilter.GaussianBlur(1.2))
+    a = np.asarray(small, dtype=np.float32)
+    h, w = a.shape
+    m = min(h, w)
+    if m < 24:
+        return None
+    gx, gy = _sobel(a)
+    mag = np.hypot(gx, gy)
+    thr = max(float(np.percentile(mag, 90)), float(mag.max()) * 0.1)
+    ys, xs = np.nonzero(mag > thr)
+    if len(xs) < 40:
+        return None
+    dx = gx[ys, xs] / mag[ys, xs]
+    dy = gy[ys, xs] / mag[ys, xs]
+    xs = xs.astype(np.float32)
+    ys = ys.astype(np.float32)
+    found: list[tuple[float, int, int, int]] = []  # score, r, cx, cy
+    for r in range(max(6, int(m * r_lo)), int(m * r_hi) + 1):
+        for sign in (1.0, -1.0):
+            cx = np.rint(xs + sign * r * dx).astype(np.int32)
+            cy = np.rint(ys + sign * r * dy).astype(np.int32)
+            ok = (cx >= 0) & (cx < w) & (cy >= 0) & (cy < h)
+            if not ok.any():
+                continue
+            acc = np.bincount(cy[ok] * w + cx[ok], minlength=w * h).reshape(h, w).astype(np.float32)
+            p = np.pad(acc, 1)
+            acc = sum(p[i : i + h, j : j + w] for i in range(3) for j in range(3))  # a pixel's slack either way
+            k = int(acc.argmax())
+            found.append((float(acc.flat[k]) / (2 * math.pi * r), r, k % w, k // w))
+    if not found:
+        return None
+    best = max(f[0] for f in found)
+    pick = max((f for f in found if f[0] >= best * 0.8), key=lambda f: f[1]) if prefer_large else max(found)
+    score, r, cx, cy = pick
+    return (cx + 0.5) * scale, (cy + 0.5) * scale, r * scale, score
+
+
+def find_circle(img: Image.Image) -> tuple[float, float, float, float] | None:
+    """The coin's outline: (centre x, centre y, radius) as fractions of the image's width, height and
+    shorter side, and a score; None when no clear circle is found.
+
+    A gradient Hough transform: each strong edge votes for the centre one radius along its gradient
+    (inwards for a light coin on a dark background, outwards for the opposite), and the circle with the
+    most support for its size wins. First on a small copy of the whole photo, preferring the largest of
+    the nearly-as-good circles so the rim beats circles in the design; then again on a sharper copy of
+    just that area, within a few percent of that size, to fit the rim closely.
+    """
+    coarse = _detect(img, DETECT_EDGE, 0.15, 0.56, prefer_large=True)
+    if coarse is None or coarse[3] < 0.35:
+        return None
+    cx, cy, r, score = coarse
+    half = r * 1.35
+    box = (max(0, int(cx - half)), max(0, int(cy - half)), min(img.width, int(cx + half) + 1), min(img.height, int(cy + half) + 1))
+    sub = img.crop(box)
+    sm = min(sub.size)
+    fine = _detect(sub, 512, r * 0.94 / sm, r * 1.06 / sm, prefer_large=False) if sm >= 48 else None
+    if fine is not None and fine[3] >= 0.2:  # sharper edges are thinner, so fewer votes: a lower bar
+        cx, cy, r, score = box[0] + fine[0], box[1] + fine[1], fine[2], fine[3]
+    return cx / img.width, cy / img.height, r / min(img.size), score
+
+
+def find_coin_crop(storage_key: str, edits: dict[str, Any]) -> dict[str, float] | None:
+    """A square crop, in fractions of the frame after the turns and straighten in `edits`, that just holds
+    the coin; None when no coin outline is found."""
+    with Image.open(storage.path_for(storage_key)) as original:
+        original.draft("RGB", (1200, 1200))  # JPEGs decode at a fraction of full size: much faster
+        img = ImageOps.exif_transpose(original)
+        img = img.convert("RGB")
+    img.thumbnail((1200, 1200))
+    frame = _geometry(img, {k: v for k, v in edits.items() if k in ("rotate", "flip", "straighten")})
+    hit = find_circle(frame)
+    if hit is None:
+        return None
+    fx, fy, fr, _ = hit
+    fw, fh = frame.size
+    side = 2 * fr * min(fw, fh) * 1.005  # pixels: the rim, and not much else
+    side = min(side, fw, fh)
+    cx, cy = fx * fw, fy * fh
+    x = min(max(cx - side / 2, 0), fw - side)
+    y = min(max(cy - side / 2, 0), fh - side)
+    return {"x": round(x / fw, 4), "y": round(y / fh, 4), "w": round(side / fw, 4), "h": round(side / fh, 4)}
 
 
 def display_size(storage_key: str) -> tuple[int, int]:

@@ -15,10 +15,15 @@ export interface Edits {
   saturation: number;
   warmth: number;
   sharpness: number;
+  circle: boolean; // cut out the circle inside the crop
+  background: Background; // outside the circle
 }
+
+export type Background = "clear" | "white" | "black";
 
 export const NO_EDITS: Edits = {
   rotate: 0, flip: false, straighten: 0, crop: null, exposure: 0, contrast: 0, saturation: 0, warmth: 0, sharpness: 0,
+  circle: false, background: "clear",
 };
 
 export const TUNING = ["exposure", "contrast", "saturation", "warmth", "sharpness"] as const;
@@ -38,6 +43,10 @@ export function toSaved(e: Edits): Partial<Edits> | null {
   if (e.straighten) out.straighten = Math.round(e.straighten * 10) / 10;
   if (!wholeFrame(e.crop)) out.crop = roundCrop(e.crop!);
   for (const k of TUNING) if (e[k]) out[k] = Math.round(e[k]);
+  if (e.circle) {
+    out.circle = true;
+    if (e.background !== "clear") out.background = e.background;
+  }
   return Object.keys(out).length ? out : null;
 }
 
@@ -161,6 +170,24 @@ function sharpen(f: Float32Array, w: number, h: number, amount: number) {
       }
     }
   }
+}
+
+/** The circle inside the canvas kept; outside it clear, white or black (the edge is anti-aliased). */
+export function circleCut(canvas: HTMLCanvasElement, e: Edits): HTMLCanvasElement {
+  if (!e.circle) return canvas;
+  const out = document.createElement("canvas");
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const ctx = out.getContext("2d")!;
+  if (e.background !== "clear") {
+    ctx.fillStyle = e.background === "white" ? "#fff" : "#000";
+    ctx.fillRect(0, 0, out.width, out.height);
+  }
+  ctx.beginPath();
+  ctx.ellipse(out.width / 2, out.height / 2, out.width / 2, out.height / 2, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.drawImage(canvas, 0, 0);
+  return out;
 }
 
 /** The largest crop of the given shape (width / height in pixels), centred in a fw x fh frame. */

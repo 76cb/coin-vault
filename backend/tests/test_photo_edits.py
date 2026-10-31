@@ -129,3 +129,56 @@ def test_edited_copies_are_cleaned_up(api, images):
     assert storage.exists(second)
     assert api.delete(f"/api/v1/photos/{photo['id']}").status_code == 204
     assert not storage.exists(second)
+
+
+def test_circle_cut_out(api, images):
+    item = make_item(api)
+    raw = images["jpeg"](images["coin"](seed=12).resize((1000, 1000)))
+    photo = upload(api, item["id"], [("c.jpg", raw, "image/jpeg")]).json()[0]
+    p = put(api, photo["id"], {"crop": {"x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8}, "circle": True}).json()
+    assert p["edits"] == {"crop": {"x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8}, "circle": True}  # clear background is the default
+    med = img(api.get(p["urls"]["medium"]))
+    assert med.mode == "RGBA"
+    a = np.asarray(med)
+    assert a[0, 0, 3] == 0 and a[-1, -1, 3] == 0  # corners are see-through
+    assert a[a.shape[0] // 2, a.shape[1] // 2, 3] == 255  # the coin isn't
+    alpha = a[..., 3]
+    assert ((alpha > 0) & (alpha < 255)).sum() > a.shape[0]  # a smooth edge, not a jagged one
+    full = api.get(p["urls"]["edited"])
+    assert full.headers["content-type"] == "image/png" and 'edited.png"' in full.headers["content-disposition"]
+    assert Image.open(io.BytesIO(full.content)).size == (800, 800)
+
+    p = put(api, photo["id"], {"crop": {"x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8}, "circle": True, "background": "white"}).json()
+    full = api.get(p["urls"]["edited"])
+    assert full.headers["content-type"] == "image/jpeg"
+    w = np.asarray(Image.open(io.BytesIO(full.content)).convert("RGB"))
+    assert (w[2, 2] > 245).all()  # white outside the circle
+    # a background without a circle is no edit at all
+    assert put(api, photo["id"], {"background": "black"}).json()["edits"] is None
+
+
+def test_find_the_coin(api, images):
+    from PIL import ImageDraw
+
+    item = make_item(api)
+    # a dark coin of radius 300 centred at (900, 500) on a light, wide photo
+    canvas = Image.new("RGB", (1600, 1000), (215, 205, 190))
+    coin = images["coin"](seed=13).resize((750, 750)).point(lambda v: int(v * 0.45))
+    mask = Image.new("L", (750, 750), 0)
+    ImageDraw.Draw(mask).ellipse((75, 75, 675, 675), fill=255)
+    canvas.paste(coin, (525, 125), mask)
+    photo = upload(api, item["id"], [("wide.jpg", images["jpeg"](canvas), "image/jpeg")]).json()[0]
+
+    r = api.post(f"/api/v1/photos/{photo['id']}/find-coin", json={})
+    assert r.status_code == 200, r.text
+    c = r.json()["crop"]
+    assert abs(c["x"] * 1600 - 600) < 16 and abs(c["y"] * 1000 - 200) < 16  # the square around the rim
+    assert abs(c["w"] * 1600 - 612) < 20 and abs(c["w"] * 1600 - c["h"] * 1000) < 2  # square, with a sliver of margin
+    # turned a quarter: the frame is 1000 x 1600 and the coin is found in it
+    t = api.post(f"/api/v1/photos/{photo['id']}/find-coin", json={"rotate": 90}).json()["crop"]
+    assert abs(t["w"] * 1000 - 612) < 20 and abs((t["x"] + t["w"] / 2) * 1000 - 500) < 16
+    assert put(api, photo["id"], {"crop": c, "circle": True}).status_code == 200
+
+    bar = upload(api, item["id"], [("bar.png", solid(900, 400, (190, 190, 195)), "image/png")]).json()[0]
+    r = api.post(f"/api/v1/photos/{bar['id']}/find-coin", json={})
+    assert r.status_code == 404 and "Drag the circle" in r.json()["detail"]

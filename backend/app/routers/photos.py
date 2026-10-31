@@ -14,7 +14,7 @@ from app.db import get_db
 from app.deps import Principal, read_items, write_items
 from app.models import Item, Photo
 from app.models import UploadFile as UploadFileRow
-from app.schemas import CoverIn, PhotoEditsIn, PhotoOrder, PhotoOut, PhotoPatch, PhotoRole
+from app.schemas import CoverIn, FindCoinIn, PhotoEditsIn, PhotoOrder, PhotoOut, PhotoPatch, PhotoRole
 from app.services import items as item_svc
 from app.services import media, photo_edit, storage
 from app.services.images import IntakeError, store_image
@@ -119,6 +119,19 @@ def set_edits(photo_id: int, body: PhotoEditsIn, principal: Principal = Depends(
     return item_svc.photo_out(photo)
 
 
+@router.post("/photos/{photo_id}/find-coin")
+def find_coin(photo_id: int, body: FindCoinIn, principal: Principal = Depends(read_items), db: Session = Depends(get_db)):
+    """Where the coin is: a square crop just around its rim, for the editor's circle. 404 when none is clear."""
+    photo = _photo(db, principal, photo_id)
+    try:
+        crop = photo_edit.find_coin_crop(photo.storage_key, body.model_dump())
+    except OSError as exc:
+        raise HTTPException(422, f"The photo couldn't be read: {exc}") from exc
+    if crop is None:
+        raise HTTPException(404, "Couldn't find a coin's edge in this photo. Drag the circle to fit it instead.")
+    return {"crop": crop}
+
+
 @router.put("/items/{item_id}/photos/order", response_model=list[PhotoOut])
 def reorder_photos(
     item_id: int, body: PhotoOrder, principal: Principal = Depends(write_items), db: Session = Depends(get_db)
@@ -192,9 +205,10 @@ def serve_photo(photo_id: int, size: PhotoSize, principal: Principal = Depends(r
         if not photo.edits:
             return _serve(photo.storage_key, photo.sha256, photo.mime, "original", photo.original_filename)
         stem = (photo.original_filename or f"photo-{photo.id}").rsplit(".", 1)[0]
-        return Response(photo_edit.full_jpeg(photo.storage_key, photo.edits), media_type="image/jpeg", headers={
+        data, mime, ext = photo_edit.full_image(photo.storage_key, photo.edits)
+        return Response(data, media_type=mime, headers={
             "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
-            "Content-Disposition": f'inline; filename="{stem}-edited.jpg"'})
+            "Content-Disposition": f'inline; filename="{stem}-edited.{ext}"'})
     if photo.edits and size in ("thumb", "medium"):
         key = photo_edit.edited_key(photo.sha256, size, photo_edit.edit_hash(photo.edits))
         if not storage.exists(key):  # e.g. derived files cleared; render them again

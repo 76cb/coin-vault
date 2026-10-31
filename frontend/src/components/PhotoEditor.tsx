@@ -1,14 +1,15 @@
 import { KeyboardEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, Photo, ROLE_LABELS } from "../api";
-import { centredCrop, colour, Crop, cropped, Edits, frame, fromSaved, isEdited, NO_EDITS, toSaved, Tuning } from "../photoEdit";
+import { Background, centredCrop, circleCut, colour, Crop, cropped, Edits, frame, fromSaved, isEdited, NO_EDITS, toSaved, Tuning } from "../photoEdit";
 
 const PREVIEW_EDGE = 1100;
 const MIN = 0.04; // smallest crop side, as a fraction of the frame
 
-type Shape = "free" | "square" | "4:3" | "3:4" | "3:2" | "original";
+type Shape = "free" | "circle" | "square" | "4:3" | "3:4" | "3:2" | "original";
 const SHAPES: { key: Shape; label: string; ratio: (fw: number, fh: number) => number | null }[] = [
   { key: "free", label: "Free", ratio: () => null },
+  { key: "circle", label: "Circle", ratio: () => 1 },
   { key: "square", label: "Square", ratio: () => 1 },
   { key: "4:3", label: "4:3", ratio: () => 4 / 3 },
   { key: "3:4", label: "3:4", ratio: () => 3 / 4 },
@@ -26,6 +27,8 @@ const SLIDERS: { key: Tuning; label: string; min: number }[] = [
 
 type Handle = "move" | "nw" | "ne" | "sw" | "se";
 
+const BACKGROUNDS: [Background, string][] = [["clear", "Clear"], ["white", "White"], ["black", "Black"]];
+
 /** Crop, straighten, turn and adjust a photo. The original file is kept; Save stores the settings. */
 export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo: Photo; title: string; onClose: () => void; onSaved: () => Promise<void> }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -33,7 +36,9 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
   const [loadError, setLoadError] = useState<string | null>(null);
   const [edits, setEdits] = useState<Edits>(() => fromSaved(photo.edits));
   const [tab, setTab] = useState<"crop" | "adjust">("crop");
-  const [shape, setShape] = useState<Shape>("free");
+  const [shape, setShape] = useState<Shape>(() => (photo.edits?.circle ? "circle" : "free"));
+  const [finding, setFinding] = useState(false);
+  const [findNote, setFindNote] = useState<string | null>(null);
   const [comparing, setComparing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,10 +72,15 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
       } else {
         out = tab === "adjust" ? cropped(geometry, edits.crop) : cropped(geometry, null);
         colour(out, edits);
+        if (tab === "adjust") out = circleCut(out, edits);
       }
-      target.width = out.width;
-      target.height = out.height;
-      target.getContext("2d")!.drawImage(out, 0, 0);
+      // a small crop is shown enlarged while adjusting, so its detail can be judged
+      const k = tab === "adjust" && !comparing ? Math.max(1, Math.min(4, 720 / Math.max(out.width, out.height))) : 1;
+      target.width = Math.round(out.width * k);
+      target.height = Math.round(out.height * k);
+      const ctx = target.getContext("2d")!;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(out, 0, 0, target.width, target.height);
     });
     return () => cancelAnimationFrame(id);
   }, [geometry, edits, tab, comparing, source]);
@@ -83,8 +93,26 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
 
   const chooseShape = (s: Shape) => {
     setShape(s);
+    setFindNote(null);
     const r = SHAPES.find((x) => x.key === s)!.ratio(fw, fh);
-    set({ crop: r ? centredCrop(fw, fh, r) : edits.crop });
+    const keep = s === "circle" && edits.crop && Math.abs(edits.crop.w * fw - edits.crop.h * fh) < 2; // already square: keep it
+    set({ crop: keep ? edits.crop : r ? centredCrop(fw, fh, r) : edits.crop, circle: s === "circle" });
+  };
+
+  // the server looks for the coin's rim in the frame as turned now, and gives back a square around it
+  const findCoin = async () => {
+    setFinding(true);
+    setFindNote(null);
+    try {
+      const { crop: found } = await api.findCoin(photo.id, { rotate: edits.rotate, flip: edits.flip, straighten: edits.straighten });
+      if (shape !== "circle" && shape !== "square") setShape("circle");
+      set({ crop: found, circle: shape === "square" ? edits.circle : true });
+      setFindNote("Found it. Drag the circle if it's not quite right.");
+    } catch (err) {
+      setFindNote((err as Error).message);
+    } finally {
+      setFinding(false);
+    }
   };
 
   const turn = (by: 90 | -90) => {
@@ -194,7 +222,12 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
             <canvas ref={shown} className="pe-canvas" />
             {tab === "crop" && !comparing && (
               <div className="pe-crop-layer">
-                <div className="pe-shade" style={{ clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${pct(crop.x)} ${pct(crop.y)}, ${pct(crop.x)} ${pct(crop.y + crop.h)}, ${pct(crop.x + crop.w)} ${pct(crop.y + crop.h)}, ${pct(crop.x + crop.w)} ${pct(crop.y)}, ${pct(crop.x)} ${pct(crop.y)})` }} />
+                {edits.circle && (
+                  <div className="pe-cut-shade" aria-hidden>
+                    <span style={{ left: pct(crop.x), top: pct(crop.y), width: pct(crop.w), height: pct(crop.h) }} />
+                  </div>
+                )}
+                <div className={`pe-shade${edits.circle ? " is-hidden" : ""}`} style={{ clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${pct(crop.x)} ${pct(crop.y)}, ${pct(crop.x)} ${pct(crop.y + crop.h)}, ${pct(crop.x + crop.w)} ${pct(crop.y + crop.h)}, ${pct(crop.x + crop.w)} ${pct(crop.y)}, ${pct(crop.x)} ${pct(crop.y)})` }} />
                 <div
                   className={`pe-box${dragging ? " is-dragging" : ""}`}
                   style={{ left: pct(crop.x), top: pct(crop.y), width: pct(crop.w), height: pct(crop.h) }}
@@ -204,7 +237,7 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
                   aria-label="Crop area. Arrow keys move it; Shift and arrows resize it."
                   onKeyDown={onBoxKey}
                 >
-                  {shape === "square" && <span className="pe-circle" aria-hidden />}
+                  {(shape === "square" || shape === "circle" || edits.circle) && <span className={`pe-circle${edits.circle ? " is-cut" : ""}`} aria-hidden />}
                   <span className="pe-thirds" aria-hidden />
                   {(["nw", "ne", "sw", "se"] as Handle[]).map((h) => (
                     <span key={h} className={`pe-handle pe-${h}`} onPointerDown={onDown(h)} aria-hidden />
@@ -237,6 +270,21 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
               ))}
               {shape === "square" && <p className="hint">The circle helps centre a coin.</p>}
             </fieldset>
+            <div className="pe-find">
+              <button type="button" onClick={findCoin} disabled={finding || !source}>{finding ? "Looking…" : "Find the coin"}</button>
+              {findNote && <p className="hint" role="status">{findNote}</p>}
+            </div>
+            {edits.circle && (
+              <fieldset className="pe-shapes">
+                <legend>Outside the circle</legend>
+                {BACKGROUNDS.map(([k, label]) => (
+                  <button key={k} type="button" className={`chip${edits.background === k ? " on" : ""}`} aria-pressed={edits.background === k} onClick={() => set({ background: k })}>
+                    {label}
+                  </button>
+                ))}
+                <p className="hint">Clear lets the page show through, so the coin sits on any background.</p>
+              </fieldset>
+            )}
             <div className="pe-turns">
               <button type="button" onClick={() => turn(-90)}>Turn left</button>
               <button type="button" onClick={() => turn(90)}>Turn right</button>

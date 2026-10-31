@@ -714,6 +714,8 @@ export const api = {
     request<{ deleted: number; photos_removed: number; uploads_removed: number }>("POST", `${A}/library/delete`, { sha256s }),
   addFromLibrary: (itemId: number, body: { sha256: string; role: PhotoRole; make_cover: boolean }) =>
     request<Photo>("POST", `${A}/items/${itemId}/photos/from-library`, body),
+  findCoin: (photoId: number, frame: { rotate: number; flip: boolean; straighten: number }) =>
+    request<{ crop: { x: number; y: number; w: number; h: number } }>("POST", `${A}/photos/${photoId}/find-coin`, frame),
   setPhotoEdits: (id: number, edits: unknown) => request<Photo>("PUT", `${A}/photos/${id}/edits`, { edits }),
   deletePhoto: (id: number) => request<void>("DELETE", `${A}/photos/${id}`),
 
