@@ -238,3 +238,52 @@ test("find a coin on Numista and fill the form from it", async ({ page }) => {
   await expect(page.getByLabel("Gross weight (g)")).toHaveValue("1.167");
   await expect(page.getByLabel("Fineness")).toHaveValue("0.925");
 });
+
+test("link an existing coin to Numista and save its estimate", async ({ page }) => {
+  let patched: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/numista/search?*", (route) =>
+    route.fulfill({ json: { count: 1, types: [{ id: 420, title: "5 Cents - Victoria", issuer: "Canada", min_year: 1858, max_year: 1901, obverse_thumbnail: null, reverse_thumbnail: null }] } }),
+  );
+  await page.route("**/api/v1/numista/types/420", (route) =>
+    route.fulfill({
+      json: {
+        id: 420, url: "https://en.numista.com/420", title: "5 Cents - Victoria", issuer: "Canada", min_year: 1858, max_year: 1901,
+        denomination: "5 Cents", composition: "Silver (.925)", weight_g: "1.167", size_mm: "15.494", references: ["KM# 2"],
+        obverse_thumb: null, reverse_thumb: null,
+        issues: [{ id: 9001, year: 1858, gregorian_year: 1858, mint_letter: null, mintage: 1500000, comment: null }],
+        item_type: "coin", details: { country: "Canada", denomination: "5 Cents", numista_id: 420, diameter_mm: "15.494", variety_notes: "KM# 2" },
+        metal: { metal: "Ag", gross_weight_g: "1.167", fineness: "0.9250" },
+      },
+    }),
+  );
+  await page.route("**/api/v1/items/*/numista/estimate", (route) =>
+    route.fulfill({ status: 201, json: { id: 1, item_id: 1, kind: "manual", value_each: "30", currency: "USD", as_of: "2026-10-31", source: "Numista estimate (VF)", notes: null, details: null } }),
+  );
+  page.on("request", (r) => { if (r.method() === "PATCH" && /\/api\/v1\/items\/\d+$/.test(r.url())) patched = r.postDataJSON(); });
+
+  const title = unique("1858 Canada 5 cents");
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.getByLabel("Title", { exact: true }).fill(title);
+  await page.getByLabel("Country").fill("Canada");
+  await page.getByLabel("Denomination").fill("5 Cents");
+  await page.getByLabel("Year").fill("1858");
+  await page.getByRole("radio", { name: "Raw" }).click();
+  await page.getByLabel("Grade as written").fill("VF30");
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+
+  await page.getByRole("button", { name: "Find on Numista" }).click();
+  await expect(page.getByLabel("Search Numista")).toHaveValue("Canada 5 Cents");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: /5 Cents - Victoria/ }).click();
+  await expect(page.getByLabel("Which issue")).toHaveValue("9001");
+  await page.getByRole("button", { name: "Link and get estimate" }).click();
+  await expect(page.getByText("Saved Numista's estimate: $30.00 each.")).toBeVisible();
+  const details = (patched as unknown as { details: Record<string, unknown> }).details;
+  expect(details.numista_id).toBe(420);
+  expect(details.numista_issue_id).toBe(9001);
+  expect(details.country).toBeUndefined(); // already filled in: left alone
+  expect(details.diameter_mm).toBe("15.494"); // was blank: filled from Numista
+  await expect(page.getByText("Numista N# 420")).toBeVisible();
+});

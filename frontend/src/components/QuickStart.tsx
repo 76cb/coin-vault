@@ -1,8 +1,8 @@
 import { ClipboardEvent, useEffect, useRef, useState } from "react";
 
 import { api, certNumber, Described, ITEM_TYPE_LABELS, money, PcgsLookup } from "../api";
-import { defaultsFromDescription, defaultsFromPcgs, FormState } from "./ItemForm";
-import NumistaSearch from "./NumistaSearch";
+import { defaultsFromDescription, defaultsFromNumista, defaultsFromPcgs, FormState } from "./ItemForm";
+import NumistaSearch, { numistaQuery } from "./NumistaSearch";
 
 export type AfterSave = { pcgsPriceGuide?: boolean };
 
@@ -88,7 +88,13 @@ export default function QuickStart({ onUse }: { onUse: (defaults: Partial<FormSt
       )}
       {!cert && (
         numista ? (
-          <NumistaSearch text={text} described={result} onUse={(d) => onUse(d)} />
+          <NumistaSearch
+            start={numistaQuery(text, result)}
+            actionLabel="Fill in from Numista"
+            doneLabel="Filled in below."
+            onPick={(t, issue) => onUse(defaultsFromNumista(t, issue, result ? defaultsFromDescription(result) : { title: text.trim() }))}
+            onCancel={() => setNumista(false)}
+          />
         ) : (
           <button type="button" className="ghost small qs-numista" onClick={() => setNumista(true)}>
             {text.trim() ? "Look this up on Numista" : "Search the Numista catalogue"}

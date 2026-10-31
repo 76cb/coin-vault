@@ -1,18 +1,35 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-import { api, Described, NumistaHit, NumistaIssue, NumistaType } from "../api";
-import { defaultsFromDescription, defaultsFromNumista, FormState } from "./ItemForm";
+import { api, Described, Item, NumistaHit, NumistaIssue, NumistaType } from "../api";
 
 const years = (h: { min_year: number | null; max_year: number | null }) =>
   h.min_year && h.max_year && h.min_year !== h.max_year ? `${h.min_year}–${h.max_year}` : String(h.min_year ?? h.max_year ?? "");
 
-/** What to search Numista for: the country, denomination and series the title reader found, else the text itself. */
-export function numistaQuery(text: string, d: Described | null): { q: string; year: string } {
+export interface NumistaStart {
+  q: string;
+  year: string;
+  mark?: string;
+}
+
+const isUsDenom = (x: string) => /^\$|^\d+c$/.test(x);
+
+/** What to search Numista for: country, series or product, and denomination; else the text itself. */
+export function numistaQuery(text: string, d: Described | null): NumistaStart {
   const det = d?.details ?? {};
   const words = [det.country === "United States" ? "" : det.country, det.product_line ?? det.series, det.denomination]
-    .filter((x) => typeof x === "string" && x && !/^\$|^\d+c$/.test(x)) as string[];
+    .filter((x) => typeof x === "string" && x && !isUsDenom(x)) as string[];
   const q = words.length >= 2 ? words.join(" ") : text.replace(/\b(PCGS|NGC|ANACS|ICG|MS|PR|PF|AU|XF|VF)\s?-?\d{0,2}\b/gi, "").replace(/\s+/g, " ").trim();
-  return { q: q.slice(0, 120), year: det.year ? String(det.year) : "" };
+  return { q: q.slice(0, 120), year: det.year ? String(det.year) : "", mark: det.mint_mark ? String(det.mint_mark) : undefined };
+}
+
+/** The same, from a saved item's details. */
+export function numistaQueryForItem(item: Item): NumistaStart {
+  const det = item.details as Record<string, unknown>;
+  const str = (k: string) => (typeof det[k] === "string" && det[k] ? (det[k] as string) : "");
+  const words = [str("country") === "United States" ? "" : str("country"), str("product_line") || str("series"), str("denomination")]
+    .filter((x) => x && !isUsDenom(x));
+  const q = words.length >= 2 ? words.join(" ") : item.title.replace(/\b(PCGS|NGC|ANACS|ICG|MS|PR|PF|AU|XF|VF)\s?-?\d{0,2}\b/gi, "").replace(/\s+/g, " ").trim();
+  return { q: q.slice(0, 120), year: det.year ? String(det.year) : "", mark: str("mint_mark") || undefined };
 }
 
 function issueLabel(i: NumistaIssue): string {
@@ -23,9 +40,38 @@ function issueLabel(i: NumistaIssue): string {
   return parts.join(", ");
 }
 
-/** Search the Numista catalogue and fill the form from a coin. Each search or new coin uses Numista requests. */
-export default function NumistaSearch({ text, described, onUse }: { text: string; described: Described | null; onUse: (d: Partial<FormState>) => void }) {
-  const start = numistaQuery(text, described);
+/** The issue matching a year (and mint mark), if exactly one does; or the only issue there is. */
+function matchIssue(t: NumistaType, start: NumistaStart): string {
+  const y = Number(start.year);
+  const mark = (start.mark ?? "").toUpperCase();
+  let match = t.issues.filter((i) => (i.year ?? i.gregorian_year) === y);
+  const marked = match.filter((i) => (i.mint_letter ?? "").toUpperCase() === mark);
+  if (mark && marked.length) match = marked;
+  else if (!mark && match.length > 1) match = match.filter((i) => !i.mint_letter).length === 1 ? match.filter((i) => !i.mint_letter) : match;
+  return match.length === 1 ? String(match[0].id) : t.issues.length === 1 ? String(t.issues[0].id) : "";
+}
+
+/**
+ * Search the Numista catalogue, pick a coin and its issue, and hand them to onPick. Each search or newly opened
+ * coin uses Numista requests (repeats come from the app's cache).
+ */
+export default function NumistaSearch({
+  start,
+  typeId,
+  issueId: savedIssue,
+  actionLabel,
+  doneLabel,
+  onPick,
+  onCancel,
+}: {
+  start: NumistaStart;
+  typeId?: number | null; // open this coin straight away (to pick or change its issue)
+  issueId?: number | null;
+  actionLabel: string;
+  doneLabel: string;
+  onPick: (t: NumistaType, issue: NumistaIssue | null) => Promise<void> | void;
+  onCancel?: () => void;
+}) {
   const [q, setQ] = useState(start.q);
   const [year, setYear] = useState(start.year);
   const [hits, setHits] = useState<NumistaHit[] | null>(null);
@@ -37,7 +83,7 @@ export default function NumistaSearch({ text, described, onUse }: { text: string
   const [applied, setApplied] = useState(false);
   const edited = useRef(false);
 
-  // the title reader may answer after this opens: take its country and denomination unless the owner typed here
+  // the title reader may answer after this opens: take its words unless the owner typed here
   useEffect(() => {
     if (edited.current) return;
     setQ(start.q);
@@ -57,6 +103,20 @@ export default function NumistaSearch({ text, described, onUse }: { text: string
     }
   };
 
+  const open = async (id: number) => {
+    const t = await run(() => api.numistaType(id));
+    if (!t) return;
+    setChosen(t);
+    setApplied(false);
+    const saved = savedIssue && t.issues.some((i) => i.id === savedIssue) ? String(savedIssue) : "";
+    setIssueId(saved || matchIssue(t, { ...start, year: year || start.year }));
+  };
+
+  useEffect(() => {
+    if (typeId) open(typeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeId]);
+
   const search = async (e?: FormEvent) => {
     e?.preventDefault();
     const r = await run(() => api.numistaSearch(q.trim(), /^\d{1,4}(-\d{1,4})?$/.test(year.trim()) ? year.trim() : undefined));
@@ -67,40 +127,28 @@ export default function NumistaSearch({ text, described, onUse }: { text: string
     }
   };
 
-  const choose = async (h: NumistaHit) => {
-    const t = await run(() => api.numistaType(h.id));
-    if (!t) return;
-    setChosen(t);
-    setApplied(false);
-    // preselect the issue matching the year (and mint mark) from the title, if exactly one does
-    const y = Number(year || described?.details.year);
-    const mark = String(described?.details.mint_mark ?? "").toUpperCase();
-    let match = t.issues.filter((i) => (i.year ?? i.gregorian_year) === y);
-    if (mark) match = match.filter((i) => (i.mint_letter ?? "").toUpperCase() === mark).length ? match.filter((i) => (i.mint_letter ?? "").toUpperCase() === mark) : match;
-    setIssueId(match.length === 1 ? String(match[0].id) : t.issues.length === 1 ? String(t.issues[0].id) : "");
-  };
-
-  const fill = () => {
+  const pick = async () => {
     if (!chosen) return;
     const issue = chosen.issues.find((i) => String(i.id) === issueId) ?? null;
-    const base = described ? defaultsFromDescription(described) : { title: text.trim() };
-    onUse(defaultsFromNumista(chosen, issue, base));
-    setApplied(true);
+    const ok = await run(async () => { await onPick(chosen, issue); return true; });
+    if (ok) setApplied(true);
   };
 
   return (
     <div className="numista">
-      <form className="numista-search" onSubmit={search}>
-        <label>
-          Search Numista
-          <input value={q} onChange={(e) => { edited.current = true; setQ(e.target.value); }} placeholder="Poland 5 złotych" />
-        </label>
-        <label className="numista-year">
-          Year
-          <input value={year} onChange={(e) => { edited.current = true; setYear(e.target.value); }} inputMode="numeric" placeholder="1934" />
-        </label>
-        <button type="submit" disabled={busy || q.trim().length < 2}>{busy && !chosen ? "Searching…" : "Search"}</button>
-      </form>
+      {!(typeId && chosen) && (
+        <form className="numista-search" onSubmit={search}>
+          <label>
+            Search Numista
+            <input value={q} onChange={(e) => { edited.current = true; setQ(e.target.value); }} placeholder="Poland 5 złotych" />
+          </label>
+          <label className="numista-year">
+            Year
+            <input value={year} onChange={(e) => { edited.current = true; setYear(e.target.value); }} inputMode="numeric" placeholder="1934" />
+          </label>
+          <button type="submit" disabled={busy || q.trim().length < 2}>{busy && !chosen ? "Searching…" : "Search"}</button>
+        </form>
+      )}
       {error && <p className="error" role="alert">{error}</p>}
 
       {hits && !chosen && (
@@ -110,7 +158,7 @@ export default function NumistaSearch({ text, described, onUse }: { text: string
             <ul className="numista-hits">
               {hits.map((h) => (
                 <li key={h.id}>
-                  <button type="button" disabled={busy} onClick={() => choose(h)}>
+                  <button type="button" disabled={busy} onClick={() => open(h.id)}>
                     {h.obverse_thumbnail ? <img src={h.obverse_thumbnail} alt="" referrerPolicy="no-referrer" loading="lazy" /> : <span className="numista-noimg" />}
                     <span className="numista-hit-text">
                       <strong>{h.title}</strong>
@@ -125,6 +173,8 @@ export default function NumistaSearch({ text, described, onUse }: { text: string
           <p className="hint">Numista found nothing for that. Try fewer words, the country and denomination, or no year.</p>
         )
       )}
+
+      {busy && typeId && !chosen && <p className="hint">Opening the coin on Numista…</p>}
 
       {chosen && (
         <div className="numista-chosen">
@@ -145,22 +195,29 @@ export default function NumistaSearch({ text, described, onUse }: { text: string
           {chosen.issues.length > 0 && (
             <label>
               Which issue
-              <select value={issueId} onChange={(e) => setIssueId(e.target.value)}>
+              <select value={issueId} onChange={(e) => { setIssueId(e.target.value); setApplied(false); }}>
                 <option value="">Not sure yet</option>
                 {chosen.issues.map((i) => <option key={i.id} value={i.id}>{issueLabel(i)}</option>)}
               </select>
-              <span className="hint">The issue sets the year and mint mark, and lets you get Numista's price estimate later.</span>
+              <span className="hint">The issue sets the year and mint mark, and Numista prices each issue separately.</span>
             </label>
           )}
           <div className="numista-actions">
-            <button type="button" className="ghost small" onClick={() => setChosen(null)}>Back to results</button>
-            {applied ? (
-              <p className="success qs-applied">Filled in below.</p>
+            {typeId ? (
+              onCancel && <button type="button" className="ghost small" onClick={onCancel}>Close</button>
             ) : (
-              <button type="button" className="primary" onClick={fill}>Fill in from Numista</button>
+              <button type="button" className="ghost small" onClick={() => setChosen(null)}>Back to results</button>
+            )}
+            {applied ? (
+              <p className="success qs-applied">{doneLabel}</p>
+            ) : (
+              <button type="button" className="primary" disabled={busy} onClick={pick}>{busy ? "Working…" : actionLabel}</button>
             )}
           </div>
         </div>
+      )}
+      {!chosen && onCancel && (
+        <button type="button" className="ghost small numista-close" onClick={onCancel}>Close</button>
       )}
     </div>
   );

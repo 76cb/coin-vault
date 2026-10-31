@@ -2,7 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, CompListing, CompsSearch, Item, money } from "../api";
+import { api, CompListing, CompsSearch, Item, money, NumistaIssue, NumistaType } from "../api";
+import { tidy } from "./ItemForm";
+import NumistaSearch, { numistaQueryForItem } from "./NumistaSearch";
 
 const WINDOWS: [string, string][] = [
   ["30", "30 days"],
@@ -31,8 +33,6 @@ export default function MarketValue({ item }: { item: Item }) {
   const [open, setOpen] = useState<null | "search" | "manual">(null);
   const [pcgsBusy, setPcgsBusy] = useState(false);
   const [pcgsError, setPcgsError] = useState<string | null>(null);
-  const [numistaBusy, setNumistaBusy] = useState(false);
-  const numistaId = (item.details as Record<string, unknown>)?.numista_id;
   const pcgsSlab = (item.condition?.grading_service ?? "").toUpperCase() === "PCGS" && Boolean(item.condition?.cert_number);
   const history = useQuery({ queryKey: ["valuations", item.id], queryFn: () => api.valuations(item.id) });
   const cur = item.values?.currency ?? "USD";
@@ -79,28 +79,7 @@ export default function MarketValue({ item }: { item: Item }) {
           )}
         </div>
       </div>
-      {numistaId ? (
-        <button
-          type="button"
-          className="ghost small market-numista"
-          disabled={numistaBusy}
-          title="Saves Numista's estimate for this coin's year, mint and grade"
-          onClick={async () => {
-            setNumistaBusy(true);
-            setPcgsError(null);
-            try {
-              await api.numistaEstimate(item.id);
-              await refresh();
-            } catch (err) {
-              setPcgsError((err as Error).message);
-            } finally {
-              setNumistaBusy(false);
-            }
-          }}
-        >
-          {numistaBusy ? "Asking Numista…" : "Get Numista's estimate"}
-        </button>
-      ) : null}
+      {(item.item_type === "coin" || item.item_type === "bullion") && <NumistaValue item={item} onChanged={refresh} />}
       {pcgsError && <p className="error" role="alert">{pcgsError}</p>}
 
       {open === "search" && <CompsSearchPanel item={item} currency={cur} onSaved={async () => { await refresh(); setOpen(null); }} />}
@@ -358,6 +337,95 @@ function CompsSearchPanel({ item, currency, onSaved }: { item: Item; currency: s
             </ul>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/** Link the item to its Numista coin (search from its own details) and save Numista's estimate for its grade. */
+function NumistaValue({ item, onChanged }: { item: Item; onChanged: () => Promise<void> }) {
+  const det = item.details as Record<string, unknown>;
+  const numistaId = typeof det.numista_id === "number" ? det.numista_id : null;
+  const issueId = typeof det.numista_issue_id === "number" ? det.numista_issue_id : null;
+  const graded = Boolean(item.condition?.sheldon_grade || item.condition?.grade_text);
+  const [mode, setMode] = useState<null | "find" | "issue">(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const estimate = async () => {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const v = await api.numistaEstimate(item.id);
+      await onChanged();
+      setNote(`Saved Numista's estimate: ${money(v.value_each, v.currency)} each.`);
+    } catch (err) {
+      const msg = (err as Error).message;
+      setError(msg);
+      if (/Pick which issue/i.test(msg)) setMode("issue");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Save the Numista coin and issue on the item, filling only details that are blank, then price it if graded. */
+  const link = async (t: NumistaType, issue: NumistaIssue | null) => {
+    const blank = (k: string) => det[k] === null || det[k] === undefined || det[k] === "";
+    const details: Record<string, unknown> = { numista_id: t.id, numista_issue_id: issue?.id ?? null };
+    for (const [k, v] of Object.entries(t.details)) if (k !== "numista_id" && blank(k)) details[k] = v;
+    const y = issue?.year ?? issue?.gregorian_year;
+    if (y && blank("year")) details.year = y;
+    if (issue?.mint_letter && blank("mint_mark")) details.mint_mark = issue.mint_letter;
+    const body: Record<string, unknown> = { details };
+    if (t.metal && item.metal_content.length === 0) {
+      body.metal_content = [{ metal: t.metal.metal, gross_weight_g: tidy(t.metal.gross_weight_g), fineness: tidy(t.metal.fineness) }];
+    }
+    await api.updateItem(item.id, item.version, body);
+    await onChanged();
+    setMode(null);
+    setNote(`Linked to Numista N# ${t.id}${y ? ` (${y}${issue?.mint_letter ? ` ${issue.mint_letter}` : ""})` : ""}.`);
+    if (graded && issue) await estimate();
+  };
+
+  const action = graded ? "Link and get estimate" : "Link this coin";
+  return (
+    <div className="market-numista">
+      <div className="market-numista-row">
+        {numistaId ? (
+          <>
+            <button type="button" className="ghost small" disabled={busy || !graded} title={graded ? "Saves Numista's estimate for this coin's year, mint and grade" : "Add the grade first"} onClick={estimate}>
+              {busy ? "Asking Numista…" : "Get Numista's estimate"}
+            </button>
+            <button type="button" className="ghost small" onClick={() => setMode(mode === "issue" ? null : "issue")}>
+              {issueId ? "Change year" : "Pick the year"}
+            </button>
+            <button type="button" className="ghost small" onClick={() => setMode(mode === "find" ? null : "find")}>Link a different coin</button>
+            <span className="hint">Numista N# {numistaId}{!graded ? ". Add a grade to get an estimate." : ""}</span>
+          </>
+        ) : (
+          <>
+            <button type="button" className="ghost small" onClick={() => setMode(mode === "find" ? null : "find")}>Find on Numista</button>
+            <span className="hint">Links this coin to Numista for its price estimate{graded ? "" : " (add a grade to get one)"}.</span>
+          </>
+        )}
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {note && <p className="success">{note}</p>}
+      {mode === "find" && (
+        <NumistaSearch start={numistaQueryForItem(item)} actionLabel={action} doneLabel="Linked." onPick={link} onCancel={() => setMode(null)} />
+      )}
+      {mode === "issue" && numistaId && (
+        <NumistaSearch
+          start={numistaQueryForItem(item)}
+          typeId={numistaId}
+          issueId={issueId}
+          actionLabel={action}
+          doneLabel="Saved."
+          onPick={link}
+          onCancel={() => setMode(null)}
+        />
       )}
     </div>
   );
