@@ -10,7 +10,7 @@ test("reference composition fills the metal content", async ({ page }) => {
   const title = unique("1964 Washington quarter");
   await signIn(page);
   await page.getByRole("link", { name: "Add item" }).first().click();
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Country").fill("United States");
   await page.getByLabel("Denomination").fill("Quarter");
   await page.getByLabel("Year").fill("1964");
@@ -39,7 +39,7 @@ test("ambiguous details offer every match", async ({ page }) => {
   const suggestion = page.locator(".suggest");
   await expect(suggestion).toContainText("could be any of these");
   await expect(suggestion.getByRole("listitem")).toHaveCount(2);
-  await page.getByLabel("Title").fill("1881 Morgan");
+  await page.getByLabel("Title", { exact: true }).fill("1881 Morgan");
   await expect(suggestion).toContainText("Looks like:");
   await expect(suggestion.getByRole("listitem")).toHaveCount(1);
 });
@@ -87,7 +87,7 @@ test("enter a market value by hand", async ({ page }) => {
   const title = unique("1921 Peace Dollar");
   await signIn(page);
   await page.getByRole("link", { name: "Add item" }).first().click();
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Quantity").fill("2");
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
@@ -121,4 +121,39 @@ test("dark mode switch is remembered", async ({ page }) => {
   await page.getByRole("link", { name: "Settings" }).click();
   await page.getByRole("radio", { name: "Same as device" }).click();
   await expect(root).not.toHaveAttribute("data-theme", /.+/);
+});
+
+test("paste a listing title to fill in the form", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  const title = unique("2021 $1 Silver Eagle T2 First Production PCGS MS70 Legends Life");
+  await page.locator("#qs-text").fill(title);
+  const found = page.locator(".qs-found");
+  await expect(found).toContainText("American Silver Eagle");
+  await expect(found).toContainText("PCGS MS70, First Production");
+  await page.getByRole("button", { name: "Fill in the form" }).click();
+
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(title);
+  await expect(page.getByLabel("Product")).toHaveValue("American Silver Eagle");
+  await expect(page.getByLabel("Grade as written")).toHaveValue("MS70");
+  await expect(page.locator(".refpick-chosen")).toContainText("American Silver Eagle, 1 oz");
+  await expect(page.locator(".suggest")).toHaveCount(0); // no gold coins offered for a silver eagle
+  await page.getByLabel("Price paid (total for all pieces)").fill("53");
+  await page.getByRole("button", { name: "Save item" }).click();
+
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await expect(page.getByText("PCGS MS70 First Production")).toBeVisible();
+  await expect(page.getByText("1 ozt (reference)")).toBeVisible();
+});
+
+test("search the reference list for a bar", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.getByLabel("Title", { exact: true }).fill(unique("Heraeus kilo"));
+  await page.getByLabel("Type").selectOption("bar");
+  await page.getByRole("button", { name: "Add metal" }).click();
+  await page.locator(".refpick input").fill("heraeus silver 1 kg");
+  await page.getByRole("option", { name: /Heraeus silver bar, 1 kg/ }).click();
+  await expect(page.locator(".refpick-chosen")).toContainText("Heraeus silver bar, 1 kg (.9999)");
+  await expect(page.getByLabel("Weight", { exact: true })).toHaveValue("1000");
 });

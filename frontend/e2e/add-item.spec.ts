@@ -7,7 +7,7 @@ test("add an item by hand, then add photos and set a cover", async ({ page }) =>
   await signIn(page);
   await page.getByRole("link", { name: "Add item" }).first().click();
 
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Year").fill("1881");
   await page.getByLabel("Mint mark").fill("S");
   await page.getByRole("button", { name: "Add metal" }).click();
@@ -50,7 +50,7 @@ test("editing keeps fields and records value changes in history", async ({ page 
   const title = unique("Peace Dollar");
   await signIn(page);
   await page.getByRole("link", { name: "Add item" }).first().click();
-  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Price paid (total for all pieces)").fill("38");
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();

@@ -127,7 +127,7 @@ def _bar(refiner: str, metal: str, size: str, fine: str, cite: str, note: str = 
     shown_fine = str(fine_d.normalize()).lstrip("0") or "0"
     label = f"{refiner} {_METAL_WORD[metal]} bar, {shown} ({shown_fine}){note}"
     return dict(
-        key=f"bar-{_slug(refiner)}-{metal.lower()}-{_slug(shown)}{'-' + _slug(note) if note else ''}",
+        key=f"bar-{_slug(refiner)}-{metal.lower()}-{_slug(shown)}-{str(fine_d.normalize()).replace('0.', '')}",
         label=label, country=None, denomination="bar", year_from=None, year_to=None, mint_marks=None,
         metal=metal, fineness=fine_d, gross_weight_g=gross.quantize(Decimal("0.0001")),
         pure_toz=(gross / TROY * fine_d).quantize(Q, rounding=ROUND_HALF_UP), per_face_unit=False, citation=cite,
@@ -142,9 +142,83 @@ def _product(label: str, metal: str, gross: str, fine: str, cite: str) -> dict:
     )
 
 
-BAR_LINES: list[tuple[str, str, str, list[str], str]] = []  # (refiner, metal, fineness, sizes, source)
-BAR_PRODUCTS: list[dict] = []
-COINS_V2: list[dict] = []
+
+CHECKED = "checked 2026-10-31"
+VALCAMBI_MINTED = f"Valcambi minted bars, valcambi.com/product/minted-bars ({CHECKED})"
+VALCAMBI_CAST = f"Valcambi cast bars, valcambi.com/product/cast-bars ({CHECKED})"
+VALCAMBI_COMBI = f"Valcambi CombiBar, valcambi.com/product/combibar ({CHECKED})"
+HERAEUS = f"Heraeus precious metal bars, heraeus-precious-metals.com ({CHECKED})"
+ARGOR = f"Argor-Heraeus cast and minted bars brochure 2025, argor-heraeus.com ({CHECKED})"
+PERTH = f"The Perth Mint 2026 bullion brochure ({CHECKED})"
+PERTH_COIN = f"The Perth Mint product page and bullion brochure ({CHECKED})"
+RCM = f"Royal Canadian Mint, mint.ca and 2016 bullion brochure ({CHECKED})"
+ROYAL_MINT = f"The Royal Mint, royalmint.com/invest/bars ({CHECKED})"
+SOVEREIGN = f"The Royal Mint, sovereign weights (gross x 916.7 fine) ({CHECKED})"
+AUSTRIAN = f"Muenze Oesterreich price list ({CHECKED})"
+PAMP_DEALER = f"PAMP Lady Fortuna, dealer listings (Suisse Gold; APMEX for 100 g) - pamp.com unreadable ({CHECKED})"
+SUNSHINE = f"Sunshine Minting, dealer listing (APMEX) ({CHECKED})"
+ASAHI = f"Asahi Refining, dealer listing (Suisse Gold) ({CHECKED})"
+US_MINT_PD = f"US Mint, American Palladium Eagle ({CHECKED})"
+APMEX_CORONA = f"APMEX spec sheet; Muenze Oesterreich lists 30.49 g fine ({CHECKED})"
+
+BAR_LINES = [
+    ("Valcambi", "Au", "0.9999", ["1 g", "2.5 g", "5 g", "10 g", "20 g", "1 oz", "50 g", "100 g", "250 g", "10 oz", "500 g", "1 kg"], VALCAMBI_MINTED),
+    ("Valcambi", "Au", "0.999", ["50 g", "100 g", "1 kg"], VALCAMBI_CAST),
+    ("Valcambi", "Au", "0.995", ["50 g", "100 g", "1 kg", "100 oz"], VALCAMBI_CAST),
+    ("Valcambi", "Ag", "0.999", ["1 oz", "50 g", "100 g", "500 g", "1 kg", "10 oz", "100 oz", "5 kg", "15 kg"], VALCAMBI_MINTED + "; " + VALCAMBI_CAST),
+    ("Valcambi", "Ag", "0.9999", ["1 kg"], VALCAMBI_CAST),
+    ("Valcambi", "Pt", "0.9995", ["1 g", "2.5 g", "5 g", "10 g", "20 g", "1 oz", "50 g", "100 g", "500 g", "1 kg"], VALCAMBI_MINTED),
+    ("Valcambi", "Pd", "0.9995", ["1 oz", "50 g", "100 g", "500 g", "1 kg"], VALCAMBI_MINTED),
+    ("PAMP Suisse", "Au", "0.9999", ["1 g", "2.5 g", "5 g", "10 g", "20 g", "100 g"], PAMP_DEALER),
+    ("Argor-Heraeus", "Au", "0.9999", ["1 g", "2 g", "5 g", "10 g", "20 g", "1 oz", "50 g", "100 g"], ARGOR),
+    ("Heraeus", "Au", "0.9999", ["1 g", "2 g", "5 g", "10 g", "20 g", "1 oz", "50 g", "100 g", "250 g", "500 g", "1 kg"], HERAEUS),
+    ("Heraeus", "Ag", "0.9999", ["1 oz", "100 g", "250 g", "500 g", "1 kg", "5 kg", "15 kg"], HERAEUS),
+    ("Heraeus", "Pt", "0.9995", ["1 oz", "100 g", "500 g", "1 kg"], HERAEUS),
+    ("Heraeus", "Pd", "0.9995", ["1 oz", "100 g", "500 g", "1 kg"], HERAEUS),
+    ("Perth Mint", "Au", "0.9999", ["1 g", "5 g", "10 g", "20 g", "1 oz", "50 g", "100 g", "10 oz", "1 kg"], PERTH),
+    ("Perth Mint", "Ag", "0.9999", ["1 kg"], PERTH),
+    ("Royal Canadian Mint", "Au", "0.9999", ["10 g", "1 oz", "50 g", "100 g"], RCM),
+    ("Royal Canadian Mint", "Ag", "0.9999", ["10 oz", "100 oz"], RCM),
+    ("The Royal Mint", "Au", "0.9999", ["1 g", "5 g", "10 g", "20 g", "50 g", "100 g"], ROYAL_MINT),
+    ("Austrian Mint", "Au", "0.9999", ["1 g", "2 g", "5 g", "10 g", "20 g", "50 g", "100 g", "250 g", "500 g", "1 kg"], AUSTRIAN),
+    ("Sunshine Minting", "Ag", "0.999", ["1 oz", "5 oz", "10 oz", "100 oz"], SUNSHINE),
+    ("Asahi", "Au", "0.9999", ["1 oz", "10 oz"], ASAHI),
+    ("Asahi", "Ag", "0.999", ["10 oz", "100 oz", "1 kg"], ASAHI),
+]
+
+BAR_PRODUCTS = [
+    _product("Valcambi Gold CombiBar 5 x 1 g", "Au", "5", "0.9999", VALCAMBI_COMBI),
+    _product("Valcambi Gold CombiBar 20 x 1 g", "Au", "20", "0.9999", VALCAMBI_COMBI),
+    _product("Valcambi Gold CombiBar 10 x 1/10 oz (1 oz)", "Au", "31.1035", "0.9999", VALCAMBI_COMBI),
+    _product("Valcambi Gold CombiBar 50 x 1 g", "Au", "50", "0.9999", VALCAMBI_COMBI),
+    _product("Valcambi Gold CombiBar 100 x 1 g", "Au", "100", "0.9999", VALCAMBI_COMBI),
+    _product("Valcambi Silver CombiBar 100 x 1 g", "Ag", "100", "0.999", VALCAMBI_COMBI),
+    _product("Valcambi Silver CombiBar 10 x 10 g", "Ag", "100", "0.999", VALCAMBI_COMBI),
+    _product("Valcambi Silver CombiBar Skyline 3 x 1 oz", "Ag", "93.3104", "0.999", VALCAMBI_COMBI),
+    _product("Valcambi Silver CombiBar Skyline 16 x 1/4 oz", "Ag", "124.4139", "0.999", VALCAMBI_COMBI),
+    _product("Valcambi Platinum CombiBar 50 x 1 g", "Pt", "50", "0.9995", VALCAMBI_COMBI),
+    _product("Valcambi Palladium CombiBar 50 x 1 g", "Pd", "50", "0.9995", VALCAMBI_COMBI),
+    _product("Heraeus Gold CombiBar 20 x 1 g", "Au", "20", "0.9999", HERAEUS),
+    _product("Heraeus Gold CombiBar 50 x 1 g", "Au", "50", "0.9999", HERAEUS),
+    _product("Heraeus Gold CombiBar 100 x 1 g", "Au", "100", "0.9999", HERAEUS),
+    _product("Heraeus Gold MultiDisc 10 x 1 g", "Au", "10", "0.9999", HERAEUS),
+]
+
+COINS_V2 = [
+    _bullion("kookaburra-ag-1oz", "Australian Silver Kookaburra, 1 oz", "Australia", "Ag", "31.107", "0.9999", "1", cite=PERTH_COIN),
+    _bullion("lunar3-ag-1oz", "Australian Lunar Series III Silver, 1 oz", "Australia", "Ag", None, "0.9999", "1", cite=f"APMEX product page ({CHECKED})"),
+    _bullion("kangaroo-au-1oz", "Australian Gold Kangaroo, 1 oz", "Australia", "Au", "31.107", "0.9999", "1", cite=PERTH_COIN),
+    _bullion("maple-au-half", "Canadian Gold Maple Leaf, 1/2 oz", "Canada", "Au", "15.55", "0.9999", "0.5", cite=RCM),
+    _bullion("maple-au-quarter", "Canadian Gold Maple Leaf, 1/4 oz", "Canada", "Au", "7.77", "0.9999", "0.25", cite=RCM),
+    _bullion("maple-au-tenth", "Canadian Gold Maple Leaf, 1/10 oz", "Canada", "Au", "3.11", "0.9999", "0.1", cite=RCM),
+    _bullion("maple-au-twentieth", "Canadian Gold Maple Leaf, 1/20 oz", "Canada", "Au", "1.55", "0.9999", "0.05", cite=RCM),
+    _bullion("ape-pd-1oz", "American Palladium Eagle, 1 oz", "United States", "Pd", "31.120", "0.9995", "1", 2017, cite=US_MINT_PD),
+    _bullion("sovereign-full", "British Gold Sovereign", "United Kingdom", "Au", "7.98", "0.9167", "0.2354", cite=SOVEREIGN),
+    _bullion("sovereign-half", "British Gold Half Sovereign", "United Kingdom", "Au", "3.99", "0.9167", "0.1177", cite=SOVEREIGN),
+    _bullion("sovereign-quarter", "British Gold Quarter Sovereign", "United Kingdom", "Au", "2", "0.9167", "0.0589", cite=SOVEREIGN),
+    _bullion("sovereign-double", "British Gold Double Sovereign", "United Kingdom", "Au", "15.98", "0.9167", "0.4709", cite=SOVEREIGN),
+    _bullion("corona-100-au", "Austrian 100 Corona (1915 restrike)", "Austria", "Au", "33.875", "0.900", "0.9802", cite=APMEX_CORONA),
+]
 
 ROWS_V2 = [_bar(r, m, size, f, src) for r, m, f, sizes, src in BAR_LINES for size in sizes] + BAR_PRODUCTS + COINS_V2
 

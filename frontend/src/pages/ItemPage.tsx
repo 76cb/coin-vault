@@ -20,7 +20,7 @@ const DETAIL_LABELS: Record<string, string> = {
   numista_id: "Numista N#",
   pcgs_number: "PCGS number",
   redbook_number: "Red Book number",
-  variety_notes: "Variety / die notes",
+  variety_notes: "Variety, label or pedigree",
   weight_value: "Weight",
   weight_unit: "Unit",
   refiner: "Refiner",

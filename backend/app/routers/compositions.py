@@ -124,8 +124,13 @@ def match(
 ):
     """Suggest compositions for a coin from its details, best first. Equal scores mean the details fit each equally well."""
     denom = _norm_denom(denomination) or _norm_denom(series)
+    # "Silver Eagle" must not suggest gold eagles: a metal named in the text rules out the others
+    named = re.search(r"\b(gold|silver|platinum|palladium)\b", f"{series or ''} {denomination or ''}".lower())
+    metal = {"gold": "Au", "silver": "Ag", "platinum": "Pt", "palladium": "Pd"}[named.group(1)] if named else None
     scored: list[tuple[int, Composition]] = []
     for c in db.scalars(select(Composition).where(_visible(principal), Composition.per_face_unit.is_(False))):
+        if metal and c.metal != metal:
+            continue
         score = 0
         if country and c.country and country.strip().lower() in (c.country.lower(), "usa", "us", "u.s.") and c.country == "United States":
             score += 2

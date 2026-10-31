@@ -20,7 +20,7 @@ test("bulk upload pairs photos, creates one item and adds the other pair to it",
   await expect(byOrder.getByRole("combobox", { name: /IMG_2001/ })).toHaveValue("obverse");
 
   // Save the named pair as a new item.
-  await byName.getByLabel("Title").fill(title);
+  await byName.getByLabel("Title", { exact: true }).fill(title);
   await byName.getByRole("button", { name: "Create item" }).click();
   await expect(page.locator(".success").getByRole("link", { name: title })).toBeVisible();
 

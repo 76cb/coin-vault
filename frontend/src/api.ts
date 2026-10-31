@@ -412,6 +412,25 @@ export interface Valuation {
   created_at: string;
 }
 
+export interface Described {
+  item_type: ItemType;
+  title: string;
+  quantity: number;
+  metal: Metal | null;
+  details: Record<string, string | number | boolean>;
+  condition: {
+    grading: "raw" | "slabbed";
+    grading_service: string | null;
+    grade_text: string | null;
+    sheldon_grade: number | null;
+    designations: string[];
+    details_reason: string | null;
+  } | null;
+  recognized: string[];
+  notes: string[];
+  compositions: (Composition & { score: number })[];
+}
+
 // --- Transport -----------------------------------------------------------------------
 
 let csrfToken: string | null = null;
@@ -538,6 +557,7 @@ export const api = {
   spotHistory: (metal: Metal, days: number) => request<SpotHistory>("GET", `${A}/prices/spot/history?metal=${metal}&days=${days}`),
   summary: () => request<Summary>("GET", `${A}/portfolio/summary`),
 
+  describe: (text: string) => request<Described>("POST", `${A}/items/describe`, { text }),
   compositions: (params: Record<string, string> = {}) => request<Composition[]>("GET", `${A}/compositions?${new URLSearchParams(params)}`),
   matchCompositions: (params: Record<string, string>) =>
     request<(Composition & { score: number })[]>("GET", `${A}/compositions/match?${new URLSearchParams(params)}`),

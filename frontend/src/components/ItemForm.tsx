@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 
-import { api, Composition, CostStatus, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, STATUS_LABELS } from "../api";
+import { api, Composition, CostStatus, Described, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, STATUS_LABELS } from "../api";
 import ReferencePicker from "./ReferencePicker";
 
 type Str = string;
@@ -12,7 +12,7 @@ interface MetalRow {
   pure_toz: Str; // empty = computed
   composition_id: Str; // empty = none
 }
-interface FormState {
+export interface FormState {
   item_type: ItemType;
   title: Str;
   quantity: Str;
@@ -41,7 +41,7 @@ interface FormState {
   valuation_rule: Str;
 }
 
-type FieldDef = { key: string; label: string; type?: "number" | "text" | "checkbox" | "select" | "textarea"; options?: string[]; hint?: string; list?: string };
+type FieldDef = { key: string; label: string; type?: "number" | "text" | "checkbox" | "select" | "textarea"; options?: string[]; hint?: string; list?: string; more?: boolean };
 
 // Suggestions only: any name can be typed.
 const REFINERS = [
@@ -79,21 +79,24 @@ const COIN_FIELDS: FieldDef[] = [
   { key: "year", label: "Year", type: "number" },
   { key: "mint_mark", label: "Mint mark" },
   { key: "series", label: "Series" },
-  { key: "diameter_mm", label: "Diameter (mm)", type: "number" },
-  { key: "numista_id", label: "Numista N#", type: "number" },
-  { key: "pcgs_number", label: "PCGS number" },
-  { key: "redbook_number", label: "Red Book number" },
-  { key: "variety_notes", label: "Variety / die notes", type: "textarea" },
+  { key: "variety_notes", label: "Variety, label or pedigree", type: "textarea", more: true },
+  { key: "pcgs_number", label: "PCGS number", more: true },
+  { key: "numista_id", label: "Numista N#", type: "number", more: true },
+  { key: "redbook_number", label: "Red Book number", more: true },
+  { key: "diameter_mm", label: "Diameter (mm)", type: "number", more: true },
 ];
 const DETAIL_FIELDS: Record<ItemType, FieldDef[]> = {
   coin: COIN_FIELDS,
   bullion: [
     { key: "product_line", label: "Product", hint: "e.g. American Silver Eagle" },
-    { key: "mint", label: "Mint or refiner", list: "refiners" },
-    { key: "country", label: "Country" },
     { key: "year", label: "Year", type: "number" },
-    { key: "mint_mark", label: "Mint mark" },
-    { key: "numista_id", label: "Numista N#", type: "number" },
+    { key: "country", label: "Country" },
+    { key: "denomination", label: "Denomination" },
+    { key: "mint", label: "Mint or refiner", list: "refiners", more: true },
+    { key: "mint_mark", label: "Mint mark", more: true },
+    { key: "variety_notes", label: "Variety, label or pedigree", type: "textarea", more: true },
+    { key: "pcgs_number", label: "PCGS number", more: true },
+    { key: "numista_id", label: "Numista N#", type: "number", more: true },
   ],
   bar: [
     { key: "weight_value", label: "Weight", type: "number" },
@@ -106,8 +109,8 @@ const DETAIL_FIELDS: Record<ItemType, FieldDef[]> = {
     { key: "country", label: "Country" },
     { key: "denomination", label: "Denomination" },
     { key: "series", label: "Series" },
-    { key: "serial_number", label: "Serial number" },
-    { key: "pick_number", label: "Pick number" },
+    { key: "serial_number", label: "Serial number", more: true },
+    { key: "pick_number", label: "Pick number", more: true },
   ],
   lot: [
     { key: "face_value", label: "Face value", type: "number" },
@@ -173,6 +176,38 @@ function fromItem(item?: Item, defaults?: Partial<FormState>): FormState {
     })),
     valuation_rule: item?.valuation_rule ?? "max",
     ...defaults,
+  };
+}
+
+/** Turn what the title reader understood into starting values for the form. */
+export function defaultsFromDescription(d: Described): Partial<FormState> {
+  const details: Record<string, Str | boolean> = {};
+  for (const [k, v] of Object.entries(d.details)) details[k] = typeof v === "boolean" ? v : String(v);
+  const best = d.compositions[0];
+  const tied = d.compositions.filter((c) => best && c.score === best.score);
+  const comp = tied.length === 1 ? best : null; // several equally good: the form offers them instead
+  let metals: MetalRow[] = [];
+  if (d.item_type === "lot") {
+    if (comp) details.composition_id = String(comp.id);
+  } else if (comp && !comp.per_face_unit) {
+    metals = [{ metal: comp.metal, gross_weight_g: "", fineness: "", pure_toz: "", composition_id: String(comp.id) }];
+  } else if (d.metal && d.item_type === "bar") {
+    metals = [{ metal: d.metal, gross_weight_g: "", fineness: "", pure_toz: "", composition_id: "" }];
+  }
+  const c = d.condition;
+  return {
+    item_type: d.item_type,
+    title: d.title,
+    quantity: String(d.quantity || 1),
+    details,
+    grading: c ? c.grading : "none",
+    grading_service: c?.grading_service ?? "",
+    grade_text: c?.grade_text ?? "",
+    sheldon_grade: c?.sheldon_grade ? String(c.sheldon_grade) : "",
+    designations: (c?.designations ?? []).join(", "),
+    details_reason: c?.details_reason ?? "",
+    metals,
+    notes: d.notes.join("\n"),
   };
 }
 
@@ -300,7 +335,8 @@ export default function ItemForm({
   // Every match sharing the top score: when the details fit several equally, offer them all rather than guess.
   // Nothing is offered once one of them is in use.
   const top = matches.data?.length ? matches.data.filter((c) => c.score === matches.data![0].score) : [];
-  const suggestions = top.some((c) => f.metals.some((m) => m.composition_id === String(c.id))) ? [] : top.slice(0, 3);
+  // once any row uses a reference, the owner has decided: no more suggestions
+  const suggestions = f.metals.some((m) => m.composition_id) ? [] : top.slice(0, 3);
   const applyComposition = (c: Composition) =>
     setF((p) => {
       const blank = { gross_weight_g: "", fineness: "", pure_toz: "", composition_id: String(c.id), metal: c.metal };
@@ -353,9 +389,19 @@ export default function ItemForm({
             Quantity
             <input type="number" min={1} inputMode="numeric" value={f.quantity} onChange={(e) => set("quantity", e.target.value)} />
           </label>
-          {fields.map((fd) => (
+          {fields.filter((fd) => !fd.more).map((fd) => (
             <DetailInput key={fd.key} def={fd} value={f.details[fd.key]} onChange={(v) => setDetail(fd.key, v)} />
           ))}
+          {fields.some((fd) => fd.more) && (
+            <details className="more-fields span2" open={fields.some((fd) => fd.more && f.details[fd.key])}>
+              <summary>More details: {fields.filter((fd) => fd.more).map((fd) => fd.label.toLowerCase()).join(", ")}</summary>
+              <div className="grid2">
+                {fields.filter((fd) => fd.more).map((fd) => (
+                  <DetailInput key={fd.key} def={fd} value={f.details[fd.key]} onChange={(v) => setDetail(fd.key, v)} />
+                ))}
+              </div>
+            </details>
+          )}
           {f.item_type === "other" && (
             <label className="span2">
               Attributes
@@ -364,6 +410,94 @@ export default function ItemForm({
             </label>
           )}
         </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Purchase</legend>
+        <div className="grid2">
+          <label>
+            Price paid (total for all pieces)
+            <input inputMode="decimal" value={f.purchase_price} onChange={(e) => set("purchase_price", e.target.value)} />
+            {costHint && <span className="hint">{costHint}</span>}
+          </label>
+          <label>
+            Shipping and fees
+            <input inputMode="decimal" value={f.purchase_fees} onChange={(e) => set("purchase_fees", e.target.value)} />
+          </label>
+          <label>
+            Cost is
+            <select value={f.cost_basis_status} onChange={(e) => set("cost_basis_status", e.target.value as CostStatus | "")}>
+              <option value="">Work it out from the price</option>
+              <option value="known">Known</option>
+              <option value="estimated">Estimated (gift, inherited)</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+          <label>
+            Value it at
+            <select value={f.valuation_rule} onChange={(e) => set("valuation_rule", e.target.value)}>
+              <option value="max">Higher of melt and market (default)</option>
+              <option value="melt">Melt value</option>
+              <option value="market">Market value</option>
+              <option value="cost">What I paid</option>
+            </select>
+          </label>
+          <label>
+            Acquired
+            <input type="date" value={f.acquired_date} onChange={(e) => set("acquired_date", e.target.value)} />
+          </label>
+          <label className="span2">
+            Bought from
+            <input value={f.purchase_source} onChange={(e) => set("purchase_source", e.target.value)} placeholder="Dealer, show, auction house" />
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Condition</legend>
+        <div className="segmented" role="radiogroup" aria-label="Grading">
+          {(["none", "raw", "slabbed"] as const).map((g) => (
+            <button type="button" key={g} role="radio" aria-checked={f.grading === g} className={f.grading === g ? "on" : ""} onClick={() => set("grading", g)}>
+              {g === "none" ? "Not recorded" : g === "raw" ? "Raw" : "Slabbed"}
+            </button>
+          ))}
+        </div>
+        {f.grading !== "none" && (
+          <div className="grid2">
+            {f.grading === "slabbed" && (
+              <>
+                <label>
+                  Grading company
+                  <input list="graders" value={f.grading_service} onChange={(e) => set("grading_service", e.target.value)} />
+                  <datalist id="graders">
+                    <option value="PCGS" /><option value="NGC" /><option value="ANACS" /><option value="ICG" /><option value="CACG" />
+                  </datalist>
+                </label>
+                <label>
+                  Cert number
+                  <input value={f.cert_number} onChange={(e) => set("cert_number", e.target.value)} />
+                </label>
+              </>
+            )}
+            <label>
+              Sheldon grade
+              <input type="number" min={1} max={70} value={f.sheldon_grade} onChange={(e) => set("sheldon_grade", e.target.value)} placeholder="1–70" />
+            </label>
+            <label>
+              Grade as written
+              <input value={f.grade_text} onChange={(e) => set("grade_text", e.target.value)} placeholder={f.grading === "slabbed" ? "MS63" : "VF details, cleaned"} />
+            </label>
+            <label>
+              Designations
+              <input value={f.designations} onChange={(e) => set("designations", e.target.value)} />
+              <span className="hint">{DESIGNATION_HINT}</span>
+            </label>
+            <label>
+              Details reason
+              <input value={f.details_reason} onChange={(e) => set("details_reason", e.target.value)} placeholder="Cleaned, scratched…" />
+            </label>
+          </div>
+        )}
       </fieldset>
 
       <fieldset>
@@ -454,94 +588,6 @@ export default function ItemForm({
         <datalist id="refiners">
           {REFINERS.map((r) => <option key={r} value={r} />)}
         </datalist>
-      </fieldset>
-
-      <fieldset>
-        <legend>Condition</legend>
-        <div className="segmented" role="radiogroup" aria-label="Grading">
-          {(["none", "raw", "slabbed"] as const).map((g) => (
-            <button type="button" key={g} role="radio" aria-checked={f.grading === g} className={f.grading === g ? "on" : ""} onClick={() => set("grading", g)}>
-              {g === "none" ? "Not recorded" : g === "raw" ? "Raw" : "Slabbed"}
-            </button>
-          ))}
-        </div>
-        {f.grading !== "none" && (
-          <div className="grid2">
-            {f.grading === "slabbed" && (
-              <>
-                <label>
-                  Grading company
-                  <input list="graders" value={f.grading_service} onChange={(e) => set("grading_service", e.target.value)} />
-                  <datalist id="graders">
-                    <option value="PCGS" /><option value="NGC" /><option value="ANACS" /><option value="ICG" /><option value="CACG" />
-                  </datalist>
-                </label>
-                <label>
-                  Cert number
-                  <input value={f.cert_number} onChange={(e) => set("cert_number", e.target.value)} />
-                </label>
-              </>
-            )}
-            <label>
-              Sheldon grade
-              <input type="number" min={1} max={70} value={f.sheldon_grade} onChange={(e) => set("sheldon_grade", e.target.value)} placeholder="1–70" />
-            </label>
-            <label>
-              Grade as written
-              <input value={f.grade_text} onChange={(e) => set("grade_text", e.target.value)} placeholder={f.grading === "slabbed" ? "MS63" : "VF details, cleaned"} />
-            </label>
-            <label>
-              Designations
-              <input value={f.designations} onChange={(e) => set("designations", e.target.value)} />
-              <span className="hint">{DESIGNATION_HINT}</span>
-            </label>
-            <label>
-              Details reason
-              <input value={f.details_reason} onChange={(e) => set("details_reason", e.target.value)} placeholder="Cleaned, scratched…" />
-            </label>
-          </div>
-        )}
-      </fieldset>
-
-      <fieldset>
-        <legend>Purchase</legend>
-        <div className="grid2">
-          <label>
-            Price paid (total for all pieces)
-            <input inputMode="decimal" value={f.purchase_price} onChange={(e) => set("purchase_price", e.target.value)} />
-            {costHint && <span className="hint">{costHint}</span>}
-          </label>
-          <label>
-            Shipping and fees
-            <input inputMode="decimal" value={f.purchase_fees} onChange={(e) => set("purchase_fees", e.target.value)} />
-          </label>
-          <label>
-            Cost is
-            <select value={f.cost_basis_status} onChange={(e) => set("cost_basis_status", e.target.value as CostStatus | "")}>
-              <option value="">Work it out from the price</option>
-              <option value="known">Known</option>
-              <option value="estimated">Estimated (gift, inherited)</option>
-              <option value="unknown">Unknown</option>
-            </select>
-          </label>
-          <label>
-            Value it at
-            <select value={f.valuation_rule} onChange={(e) => set("valuation_rule", e.target.value)}>
-              <option value="max">Higher of melt and market (default)</option>
-              <option value="melt">Melt value</option>
-              <option value="market">Market value</option>
-              <option value="cost">What I paid</option>
-            </select>
-          </label>
-          <label>
-            Acquired
-            <input type="date" value={f.acquired_date} onChange={(e) => set("acquired_date", e.target.value)} />
-          </label>
-          <label className="span2">
-            Bought from
-            <input value={f.purchase_source} onChange={(e) => set("purchase_source", e.target.value)} placeholder="Dealer, show, auction house" />
-          </label>
-        </div>
       </fieldset>
 
       <fieldset>

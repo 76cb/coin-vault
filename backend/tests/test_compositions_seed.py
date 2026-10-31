@@ -11,7 +11,7 @@ def test_bar_math_and_labels():
     assert oz["gross_weight_g"] == Decimal("31.1035") and oz["pure_toz"] == Decimal("0.999900")
     half = _bar("Perth Mint", "Au", "1/2 oz", "0.9999", "src")
     assert half["pure_toz"] == Decimal("0.499950")
-    assert _bar("Royal Canadian Mint", "Ag", "10 oz", "0.9999", "s")["key"] == "bar-royal-canadian-mint-ag-10-oz"
+    assert _bar("Royal Canadian Mint", "Ag", "10 oz", "0.9999", "s")["key"] == "bar-royal-canadian-mint-ag-10-oz-9999"
     assert _product("Valcambi Silver CombiBar 100 g", "Ag", "100", "0.999", "s")["pure_toz"] == Decimal("3.211860")
 
 

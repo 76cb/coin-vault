@@ -19,7 +19,7 @@ from app.deps import request_id_var
 from app.logging_setup import log, setup_logging
 from app.migrate import upgrade_to_head
 from app import scheduler
-from app.routers import auth, compositions, documents, health, items, photos, prices, reference, settings, uploads, valuations
+from app.routers import auth, compositions, describe, documents, health, items, photos, prices, reference, settings, uploads, valuations
 from app.services import storage
 
 API_PREFIX = "/api/v1"
@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
         return response
 
     for r in (
-        health.router, auth.router, items.router, reference.router, photos.router, documents.router, uploads.router,
+        health.router, auth.router, describe.router, items.router, reference.router, photos.router, documents.router, uploads.router,
         prices.router, compositions.router, settings.router, valuations.router,
     ):
         app.include_router(r, prefix=API_PREFIX)

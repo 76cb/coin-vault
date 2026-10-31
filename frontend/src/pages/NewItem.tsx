@@ -1,19 +1,26 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { api } from "../api";
-import ItemForm from "../components/ItemForm";
+import { api, Described } from "../api";
+import ItemForm, { defaultsFromDescription, FormState } from "../components/ItemForm";
+import QuickStart from "../components/QuickStart";
 
 export default function NewItem() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [seed, setSeed] = useState<{ n: number; defaults: Partial<FormState> } | null>(null);
+  const use = useCallback((d: Described) => setSeed({ n: Date.now(), defaults: defaultsFromDescription(d) }), []);
   return (
     <>
       <div className="page-head">
         <h1>Add item</h1>
       </div>
-      <p className="muted lede">Fill in what you know; everything except the title can wait. You can add photos once it's saved.</p>
+      <QuickStart onUse={use} />
+      <p className="muted lede">Or fill in the form yourself. Only the title is required; photos can be added once it's saved.</p>
       <ItemForm
+        key={seed?.n ?? 0}
+        defaults={seed?.defaults}
         submitLabel="Save item"
         onCancel={() => navigate(-1)}
         onSubmit={async (payload) => {
