@@ -88,7 +88,7 @@ def upgrade() -> None:
     sa.Column('value', sa.JSON(), nullable=True),
     sa.PrimaryKeyConstraint('key', name=op.f('pk_system_settings'))
     )
-    from app.compositions_seed import ROWS
+    from app.compositions_seed import ROWS_V1 as ROWS
 
     compositions = sa.table(
         "compositions",
@@ -103,7 +103,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    from app.compositions_seed import ROWS
+    from app.compositions_seed import ROWS_V1 as ROWS
 
     keys = ", ".join(f"'{r['key']}'" for r in ROWS)
     op.execute(f"DELETE FROM compositions WHERE owner_id IS NULL AND key IN ({keys})")

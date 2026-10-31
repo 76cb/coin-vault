@@ -1,4 +1,6 @@
-"""Standard compositions (actual silver/gold/platinum/palladium weight), loaded by migration 0002.
+"""Standard compositions (actual silver/gold/platinum/palladium weight).
+
+ROWS_V1 is loaded by migration 0002; ROWS_V2 (bars by refiner, more bullion coins) by migration 0004.
 
 Pure weight = gross weight (g) / 31.1034768 x fineness, rounded to 6 decimals, from each mint's
 published specifications. Bullion uses the mint's stated pure content. Per-face rows give pure
@@ -46,7 +48,7 @@ _quarter = _pure("6.25", "0.900")
 _half40 = _pure("11.50", "0.400")
 _war_nickel = _pure("5.00", "0.350")
 
-ROWS = [
+ROWS_V1 = [
     # US 90% silver
     _coin("us-dime-90", "US dime, 90% silver (1892–1964)", "10c", 1892, 1964, "Ag", "2.50", "0.900"),
     _coin("us-quarter-90", "US quarter, 90% silver (1892–1964)", "25c", 1892, 1964, "Ag", "6.25", "0.900"),
@@ -94,3 +96,56 @@ ROWS = [
     _bullion("maple-pt-1oz", "Canadian Platinum Maple Leaf, 1 oz", "Canada", "Pt", "31.11", "0.9995", "1"),
     _bullion("maple-pd-1oz", "Canadian Palladium Maple Leaf, 1 oz", "Canada", "Pd", "31.11", "0.9995", "1"),
 ]
+
+
+# --- Version 2: bars by refiner and more bullion coins (migration 0004) --------------------
+
+_SIZE_G = {"g": Decimal(1), "oz": TROY, "kg": Decimal(1000)}
+_METAL_WORD = {"Au": "gold", "Ag": "silver", "Pt": "platinum", "Pd": "palladium"}
+
+
+def _size(size: str) -> tuple[Decimal, str]:
+    """'2.5 g' -> (2.5 g, '2.5 g'); '1 oz' -> (31.1034768 g, '1 oz'); '1/2 oz' works too."""
+    amount, unit = size.split()
+    if "/" in amount:
+        a, b = amount.split("/")
+        qty = Decimal(a) / Decimal(b)
+    else:
+        qty = Decimal(amount)
+    return qty * _SIZE_G[unit], f"{amount} {unit}"
+
+
+def _slug(t: str) -> str:
+    import re
+
+    return re.sub(r"[^a-z0-9]+", "-", t.lower()).strip("-")
+
+
+def _bar(refiner: str, metal: str, size: str, fine: str, cite: str, note: str = "") -> dict:
+    gross, shown = _size(size)
+    fine_d = Decimal(fine)
+    shown_fine = str(fine_d.normalize()).lstrip("0") or "0"
+    label = f"{refiner} {_METAL_WORD[metal]} bar, {shown} ({shown_fine}){note}"
+    return dict(
+        key=f"bar-{_slug(refiner)}-{metal.lower()}-{_slug(shown)}{'-' + _slug(note) if note else ''}",
+        label=label, country=None, denomination="bar", year_from=None, year_to=None, mint_marks=None,
+        metal=metal, fineness=fine_d, gross_weight_g=gross.quantize(Decimal("0.0001")),
+        pure_toz=(gross / TROY * fine_d).quantize(Q, rounding=ROUND_HALF_UP), per_face_unit=False, citation=cite,
+    )
+
+
+def _product(label: str, metal: str, gross: str, fine: str, cite: str) -> dict:
+    return dict(
+        key=f"bar-{_slug(label)}", label=label, country=None, denomination="bar", year_from=None, year_to=None,
+        mint_marks=None, metal=metal, fineness=Decimal(fine), gross_weight_g=Decimal(gross),
+        pure_toz=_pure(gross, fine), per_face_unit=False, citation=cite,
+    )
+
+
+BAR_LINES: list[tuple[str, str, str, list[str], str]] = []  # (refiner, metal, fineness, sizes, source)
+BAR_PRODUCTS: list[dict] = []
+COINS_V2: list[dict] = []
+
+ROWS_V2 = [_bar(r, m, size, f, src) for r, m, f, sizes, src in BAR_LINES for size in sizes] + BAR_PRODUCTS + COINS_V2
+
+ROWS = ROWS_V1 + ROWS_V2

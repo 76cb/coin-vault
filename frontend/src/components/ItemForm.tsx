@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 
 import { api, Composition, CostStatus, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, STATUS_LABELS } from "../api";
+import ReferencePicker from "./ReferencePicker";
 
 type Str = string;
 interface MetalRow {
@@ -40,7 +41,37 @@ interface FormState {
   valuation_rule: Str;
 }
 
-type FieldDef = { key: string; label: string; type?: "number" | "text" | "checkbox" | "select" | "textarea"; options?: string[]; hint?: string };
+type FieldDef = { key: string; label: string; type?: "number" | "text" | "checkbox" | "select" | "textarea"; options?: string[]; hint?: string; list?: string };
+
+// Suggestions only: any name can be typed.
+const REFINERS = [
+  "Valcambi", "PAMP Suisse", "Argor-Heraeus", "Heraeus", "Metalor", "Credit Suisse", "UBS", "Perth Mint",
+  "Royal Canadian Mint", "The Royal Mint", "US Mint", "Austrian Mint", "South African Mint", "Mexican Mint",
+  "Engelhard", "Johnson Matthey", "Sunshine Minting", "Asahi Refining", "Scottsdale Mint", "Geiger Edelmetalle",
+  "Umicore", "C. Hafner", "Royal Mint (Britannia)", "Elemetal", "Golden State Mint", "Highland Mint", "Silvertowne",
+];
+const FINENESSES: [string, string][] = [
+  ["0.9999", "four nines (99.99%)"],
+  ["0.9995", "platinum and palladium bars"],
+  ["0.999", "three nines (99.9%)"],
+  ["0.9167", "22 karat (Eagles, Krugerrands, Sovereigns)"],
+  ["0.958", "Britannia silver"],
+  ["0.925", "sterling"],
+  ["0.900", "US and Latin Union coin silver and gold"],
+  ["0.835", "Swiss and French silver"],
+  ["0.800", "European silver"],
+  ["0.750", "18 karat"],
+  ["0.585", "14 karat"],
+  ["0.500", "50% silver (UK 1920–1946)"],
+  ["0.400", "40% silver"],
+  ["0.350", "war nickels"],
+];
+
+/** "100.000000" -> "100", "0.99900" -> "0.999"; anything else unchanged. */
+export function tidy(v: unknown): string {
+  const t = v === null || v === undefined ? "" : String(v);
+  return /^-?\d+\.\d+$/.test(t) ? t.replace(/0+$/, "").replace(/\.$/, "") : t;
+}
 
 const COIN_FIELDS: FieldDef[] = [
   { key: "country", label: "Country" },
@@ -58,7 +89,7 @@ const DETAIL_FIELDS: Record<ItemType, FieldDef[]> = {
   coin: COIN_FIELDS,
   bullion: [
     { key: "product_line", label: "Product", hint: "e.g. American Silver Eagle" },
-    { key: "mint", label: "Mint or refiner" },
+    { key: "mint", label: "Mint or refiner", list: "refiners" },
     { key: "country", label: "Country" },
     { key: "year", label: "Year", type: "number" },
     { key: "mint_mark", label: "Mint mark" },
@@ -67,7 +98,7 @@ const DETAIL_FIELDS: Record<ItemType, FieldDef[]> = {
   bar: [
     { key: "weight_value", label: "Weight", type: "number" },
     { key: "weight_unit", label: "Unit", type: "select", options: ["ozt", "g", "kg", "tola"] },
-    { key: "refiner", label: "Refiner / mint" },
+    { key: "refiner", label: "Refiner / mint", list: "refiners" },
     { key: "serial_number", label: "Serial number" },
     { key: "has_assay_card", label: "Has assay card", type: "checkbox" },
   ],
@@ -97,7 +128,7 @@ function fromItem(item?: Item, defaults?: Partial<FormState>): FormState {
   if (item) {
     for (const [k, v] of Object.entries(item.details)) {
       if (k === "attributes") continue;
-      details[k] = typeof v === "boolean" ? v : s(v);
+      details[k] = typeof v === "boolean" ? v : tidy(v);
     }
     if (item.item_type === "other") {
       const attrs = (item.details.attributes ?? {}) as Record<string, unknown>;
@@ -113,14 +144,14 @@ function fromItem(item?: Item, defaults?: Partial<FormState>): FormState {
     status: item?.status ?? "owned",
     location_id: s(item?.location_id),
     acquired_date: s(item?.acquired_date),
-    purchase_price: s(item?.purchase_price),
-    purchase_fees: s(item?.purchase_fees),
+    purchase_price: tidy(item?.purchase_price),
+    purchase_fees: tidy(item?.purchase_fees),
     cost_basis_status: item?.cost_basis_status ?? "",
     purchase_source: s(item?.purchase_source),
     notes: s(item?.notes),
     sale_date: s(item?.sale_date),
-    sale_price: s(item?.sale_price),
-    sale_fees: s(item?.sale_fees),
+    sale_price: tidy(item?.sale_price),
+    sale_fees: tidy(item?.sale_fees),
     sale_venue: s(item?.sale_venue),
     tags: (item?.tags ?? []).join(", "),
     details,
@@ -133,9 +164,9 @@ function fromItem(item?: Item, defaults?: Partial<FormState>): FormState {
     details_reason: s(c?.details_reason),
     metals: (item?.metal_content ?? []).map((m) => ({
       metal: m.metal,
-      gross_weight_g: s(m.gross_weight_g),
-      fineness: s(m.fineness),
-      pure_toz: m.source === "override" ? s(m.pure_toz) : "",
+      gross_weight_g: tidy(m.gross_weight_g),
+      fineness: tidy(m.fineness),
+      pure_toz: m.source === "override" ? tidy(m.pure_toz) : "",
       composition_id: s(m.composition_id),
       // a reference row shows the reference values as placeholders, not as typed values
       ...(m.source === "reference" ? { gross_weight_g: "", fineness: "" } : {}),
@@ -245,6 +276,7 @@ export default function ItemForm({
   const locations = useQuery({ queryKey: ["locations"], queryFn: api.locations });
   const fields = DETAIL_FIELDS[f.item_type];
   const comps = useQuery({ queryKey: ["compositions"], queryFn: () => api.compositions(), staleTime: 5 * 60_000 });
+  const refOptions = useMemo(() => (comps.data ?? []).filter((c) => !c.per_face_unit), [comps.data]);
   const compById = useMemo(() => new Map((comps.data ?? []).map((c) => [String(c.id), c])), [comps.data]);
   const matchParams = useMemo(() => {
     if (f.item_type !== "coin" && f.item_type !== "bullion") return null;
@@ -370,25 +402,22 @@ export default function ItemForm({
           const comp = compById.get(m.composition_id);
           return (
           <div className="metal-row" key={i}>
-            <label className="metal-ref">
-              Reference
-              <select
+            <div className="metal-ref">
+              <ReferencePicker
+                options={refOptions}
                 value={m.composition_id}
-                onChange={(e) => {
-                  const c = compById.get(e.target.value);
-                  setMetal(i, c ? { composition_id: e.target.value, metal: c.metal, gross_weight_g: "", fineness: "", pure_toz: "" } : { composition_id: "" });
+                onChange={(cid) => {
+                  const c = compById.get(cid);
+                  if (!c) return setMetal(i, { composition_id: "" });
+                  setMetal(i, { composition_id: cid, metal: c.metal, gross_weight_g: "", fineness: "", pure_toz: "" });
+                  // a bar picked from the list: show its weight in the bar details too, unless already filled
+                  if (f.item_type === "bar" && c.gross_weight_g && !String(f.details.weight_value ?? "").trim()) {
+                    setDetail("weight_value", tidy(c.gross_weight_g));
+                    setDetail("weight_unit", "g");
+                  }
                 }}
-              >
-                <option value="">None: I'll enter the weights</option>
-                {(Object.keys(METAL_LABELS) as Metal[]).map((metal) => (
-                  <optgroup key={metal} label={METAL_LABELS[metal]}>
-                    {comps.data?.filter((c) => !c.per_face_unit && c.metal === metal).map((c) => (
-                      <option key={c.id} value={c.id}>{c.label}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </label>
+              />
+            </div>
             <label>
               Metal
               <select value={m.metal} onChange={(e) => setMetal(i, { metal: e.target.value as Metal })}>
@@ -403,7 +432,7 @@ export default function ItemForm({
             </label>
             <label>
               Fineness
-              <input inputMode="decimal" value={m.fineness} onChange={(e) => setMetal(i, { fineness: e.target.value })} placeholder={comp?.fineness ? String(Number(comp.fineness)) : "0.900"} />
+              <input inputMode="decimal" list="finenesses" value={m.fineness} onChange={(e) => setMetal(i, { fineness: e.target.value })} placeholder={comp?.fineness ? String(Number(comp.fineness)) : "0.999"} />
             </label>
             <label>
               Pure ozt override
@@ -419,6 +448,12 @@ export default function ItemForm({
         <button type="button" className="ghost small" onClick={() => setF((p) => ({ ...p, metals: [...p.metals, { metal: "Ag", gross_weight_g: "", fineness: "", pure_toz: "", composition_id: "" }] }))}>
           Add metal
         </button>
+        <datalist id="finenesses">
+          {FINENESSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </datalist>
+        <datalist id="refiners">
+          {REFINERS.map((r) => <option key={r} value={r} />)}
+        </datalist>
       </fieldset>
 
       <fieldset>
@@ -613,6 +648,7 @@ function DetailInput({ def, value, onChange }: { def: FieldDef; value: string | 
         inputMode={def.type === "number" ? "decimal" : undefined}
         value={String(value ?? "")}
         onChange={(e) => onChange(e.target.value)}
+        list={def.list}
         placeholder={def.hint}
       />
     </label>
