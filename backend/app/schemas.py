@@ -51,6 +51,7 @@ class CoinDetailsIn(_Base):
     mint: str | None = Field(default=None, max_length=120)
     diameter_mm: Decimal | None = Field(default=None, ge=0, le=1000)
     numista_id: int | None = Field(default=None, ge=1)
+    numista_issue_id: int | None = Field(default=None, ge=1)
     pcgs_number: str | None = Field(default=None, max_length=20)
     redbook_number: str | None = Field(default=None, max_length=30)
     variety_notes: str | None = None

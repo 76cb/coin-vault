@@ -57,6 +57,7 @@ TABLES = [
     "provider_configs",
     "api_quota_periods",
     "api_call_log",
+    "provider_cache",
     "system_settings",
     "upload_files",
     "upload_groups",

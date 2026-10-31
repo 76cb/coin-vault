@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 
-import { api, Composition, CostStatus, Described, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, PcgsLookup, STATUS_LABELS } from "../api";
+import { api, Composition, CostStatus, Described, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, NumistaIssue, NumistaType, PcgsLookup, STATUS_LABELS } from "../api";
 import ReferencePicker from "./ReferencePicker";
 
 type Str = string;
@@ -82,6 +82,7 @@ const COIN_FIELDS: FieldDef[] = [
   { key: "variety_notes", label: "Variety, label or pedigree", type: "textarea", more: true },
   { key: "pcgs_number", label: "PCGS number", more: true },
   { key: "numista_id", label: "Numista N#", type: "number", more: true },
+  { key: "numista_issue_id", label: "Numista issue", type: "number", more: true, hint: "Set when you pick the year in a Numista search" },
   { key: "redbook_number", label: "Red Book number", more: true },
   { key: "diameter_mm", label: "Diameter (mm)", type: "number", more: true },
 ];
@@ -97,6 +98,7 @@ const DETAIL_FIELDS: Record<ItemType, FieldDef[]> = {
     { key: "variety_notes", label: "Variety, label or pedigree", type: "textarea", more: true },
     { key: "pcgs_number", label: "PCGS number", more: true },
     { key: "numista_id", label: "Numista N#", type: "number", more: true },
+    { key: "numista_issue_id", label: "Numista issue", type: "number", more: true },
   ],
   bar: [
     { key: "weight_value", label: "Weight", type: "number" },
@@ -208,6 +210,27 @@ export function defaultsFromDescription(d: Described): Partial<FormState> {
     details_reason: c?.details_reason ?? "",
     metals,
     notes: d.notes.join("\n"),
+  };
+}
+
+/** Starting values from a Numista coin and one of its issues, on top of what the typed title already gave. */
+export function defaultsFromNumista(t: NumistaType, issue: NumistaIssue | null, base: Partial<FormState> = {}): Partial<FormState> {
+  const details: Record<string, Str | boolean> = { ...(base.details ?? {}) };
+  for (const [k, v] of Object.entries(t.details)) details[k] = String(v);
+  const year = issue?.year ?? issue?.gregorian_year;
+  if (year) details.year = String(year);
+  if (issue?.mint_letter) details.mint_mark = issue.mint_letter;
+  if (issue) details.numista_issue_id = String(issue.id);
+  const keepType = base.item_type === "coin" || base.item_type === "bullion";
+  return {
+    ...base,
+    item_type: keepType ? base.item_type : t.item_type,
+    title: base.title || [year, t.title].filter(Boolean).join(" "),
+    quantity: base.quantity ?? "1",
+    details,
+    metals: t.metal
+      ? [{ metal: t.metal.metal, gross_weight_g: tidy(t.metal.gross_weight_g), fineness: tidy(t.metal.fineness), pure_toz: "", composition_id: "" }]
+      : base.metals ?? [],
   };
 }
 

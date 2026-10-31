@@ -200,3 +200,41 @@ test("look up a PCGS cert number", async ({ page }) => {
   await expect(page.getByRole("heading", { name: `${name} PCGS MS65` })).toBeVisible();
   expect(priceGuideCalls).toBe(1);
 });
+
+test("find a coin on Numista and fill the form from it", async ({ page }) => {
+  // the e2e server can't reach Numista, so its answers are given here (in the spec's format, via our API's shape)
+  await page.route("**/api/v1/numista/search?*", (route) =>
+    route.fulfill({ json: { count: 1, types: [{ id: 420, title: "5 Cents - Victoria", issuer: "Canada", min_year: 1858, max_year: 1901, obverse_thumbnail: null, reverse_thumbnail: null }] } }),
+  );
+  await page.route("**/api/v1/numista/types/420", (route) =>
+    route.fulfill({
+      json: {
+        id: 420, url: "https://en.numista.com/420", title: "5 Cents - Victoria", issuer: "Canada", min_year: 1858, max_year: 1901,
+        denomination: "5 Cents", composition: "Silver (.925) (.925 silver .075 copper)", weight_g: "1.167", size_mm: "15.494",
+        references: ["KM# 2"], obverse_thumb: null, reverse_thumb: null,
+        issues: [
+          { id: 9001, year: 1858, gregorian_year: 1858, mint_letter: null, mintage: 1500000, comment: null },
+          { id: 9003, year: 1870, gregorian_year: 1870, mint_letter: "H", mintage: 100000, comment: null },
+        ],
+        item_type: "coin",
+        details: { country: "Canada", denomination: "5 Cents", numista_id: 420, diameter_mm: "15.494", variety_notes: "KM# 2" },
+        metal: { metal: "Ag", gross_weight_g: "1.167", fineness: "0.9250" },
+      },
+    }),
+  );
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.locator("#qs-text").fill(unique("1858 Canada 5 cents"));
+  await page.getByRole("button", { name: "Look this up on Numista" }).click();
+  await expect(page.getByLabel("Search Numista")).toHaveValue("Canada 5 cents");
+  await expect(page.getByLabel("Year", { exact: true }).first()).toHaveValue("1858");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: /5 Cents - Victoria/ }).click();
+  await expect(page.getByLabel("Which issue")).toHaveValue("9001"); // the year from the title picks it
+  await page.getByRole("button", { name: "Fill in from Numista" }).click();
+
+  await expect(page.getByLabel("Country")).toHaveValue("Canada");
+  await expect(page.getByLabel("Denomination")).toHaveValue("5 Cents");
+  await expect(page.getByLabel("Gross weight (g)")).toHaveValue("1.167");
+  await expect(page.getByLabel("Fineness")).toHaveValue("0.925");
+});

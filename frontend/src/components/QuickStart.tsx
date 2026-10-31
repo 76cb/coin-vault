@@ -2,6 +2,7 @@ import { ClipboardEvent, useEffect, useRef, useState } from "react";
 
 import { api, certNumber, Described, ITEM_TYPE_LABELS, money, PcgsLookup } from "../api";
 import { defaultsFromDescription, defaultsFromPcgs, FormState } from "./ItemForm";
+import NumistaSearch from "./NumistaSearch";
 
 export type AfterSave = { pcgsPriceGuide?: boolean };
 
@@ -11,6 +12,7 @@ export default function QuickStart({ onUse }: { onUse: (defaults: Partial<FormSt
   const [result, setResult] = useState<Described | null>(null);
   const [applied, setApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [numista, setNumista] = useState(false);
   const pasted = useRef(false);
   const seq = useRef(0);
   const cert = certNumber(text);
@@ -83,6 +85,15 @@ export default function QuickStart({ onUse }: { onUse: (defaults: Partial<FormSt
             </button>
           )}
         </div>
+      )}
+      {!cert && (
+        numista ? (
+          <NumistaSearch text={text} described={result} onUse={(d) => onUse(d)} />
+        ) : (
+          <button type="button" className="ghost small qs-numista" onClick={() => setNumista(true)}>
+            {text.trim() ? "Look this up on Numista" : "Search the Numista catalogue"}
+          </button>
+        )
       )}
     </section>
   );

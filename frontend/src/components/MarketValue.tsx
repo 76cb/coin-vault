@@ -31,6 +31,8 @@ export default function MarketValue({ item }: { item: Item }) {
   const [open, setOpen] = useState<null | "search" | "manual">(null);
   const [pcgsBusy, setPcgsBusy] = useState(false);
   const [pcgsError, setPcgsError] = useState<string | null>(null);
+  const [numistaBusy, setNumistaBusy] = useState(false);
+  const numistaId = (item.details as Record<string, unknown>)?.numista_id;
   const pcgsSlab = (item.condition?.grading_service ?? "").toUpperCase() === "PCGS" && Boolean(item.condition?.cert_number);
   const history = useQuery({ queryKey: ["valuations", item.id], queryFn: () => api.valuations(item.id) });
   const cur = item.values?.currency ?? "USD";
@@ -77,6 +79,28 @@ export default function MarketValue({ item }: { item: Item }) {
           )}
         </div>
       </div>
+      {numistaId ? (
+        <button
+          type="button"
+          className="ghost small market-numista"
+          disabled={numistaBusy}
+          title="Saves Numista's estimate for this coin's year, mint and grade"
+          onClick={async () => {
+            setNumistaBusy(true);
+            setPcgsError(null);
+            try {
+              await api.numistaEstimate(item.id);
+              await refresh();
+            } catch (err) {
+              setPcgsError((err as Error).message);
+            } finally {
+              setNumistaBusy(false);
+            }
+          }}
+        >
+          {numistaBusy ? "Asking Numista…" : "Get Numista's estimate"}
+        </button>
+      ) : null}
       {pcgsError && <p className="error" role="alert">{pcgsError}</p>}
 
       {open === "search" && <CompsSearchPanel item={item} currency={cur} onSaved={async () => { await refresh(); setOpen(null); }} />}

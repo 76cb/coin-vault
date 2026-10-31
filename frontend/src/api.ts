@@ -470,6 +470,45 @@ export interface PcgsLookup {
   currency_note: string | null;
 }
 
+export interface NumistaHit {
+  id: number;
+  title: string | null;
+  issuer: string | null;
+  min_year: number | null;
+  max_year: number | null;
+  obverse_thumbnail: string | null;
+  reverse_thumbnail: string | null;
+}
+
+export interface NumistaIssue {
+  id: number;
+  year: number | null;
+  gregorian_year: number | null;
+  mint_letter: string | null;
+  mintage: number | null;
+  comment: string | null;
+}
+
+export interface NumistaType {
+  id: number;
+  url: string | null;
+  title: string;
+  issuer: string | null;
+  min_year: number | null;
+  max_year: number | null;
+  denomination: string | null;
+  composition: string | null;
+  weight_g: string | null;
+  size_mm: string | null;
+  references: string[];
+  obverse_thumb: string | null;
+  reverse_thumb: string | null;
+  issues: NumistaIssue[];
+  item_type: ItemType;
+  details: Record<string, string | number>;
+  metal: { metal: Metal; gross_weight_g: string; fineness: string } | null;
+}
+
 /** A PCGS cert number on its own ("12345678", "cert #12345678", "PCGS 12345678"), or null. */
 export function certNumber(text: string): string | null {
   const m = text.trim().match(/^(?:pcgs\s*)?(?:cert(?:ificate)?\s*(?:#|no\.?|number)?\s*)?#?\s*(\d{6,10})$/i);
@@ -610,6 +649,10 @@ export const api = {
   createComposition: (body: unknown) => request<Composition>("POST", `${A}/compositions`, body),
   deleteComposition: (id: number) => request<void>("DELETE", `${A}/compositions/${id}`),
 
+  numistaSearch: (q: string, year?: string) =>
+    request<{ count: number; types: NumistaHit[] }>("GET", `${A}/numista/search?${new URLSearchParams(year ? { q, year } : { q })}`),
+  numistaType: (id: number) => request<NumistaType>("GET", `${A}/numista/types/${id}`),
+  numistaEstimate: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/numista/estimate`),
   pcgsLookup: (certNo: string) => request<PcgsLookup>("POST", `${A}/pcgs/lookup`, { cert_no: certNo }),
   pcgsPriceGuide: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/pcgs/price-guide`),
 

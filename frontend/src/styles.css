@@ -680,3 +680,27 @@ table.figures { border-collapse: collapse; width: 100%; font-size: var(--step--1
 @media (max-width: 760px) {
   .pe-actions { position: sticky; bottom: -1rem; background: var(--surface); padding: 0.6rem 0 1rem; margin-bottom: -1rem; border-top: 1px solid var(--hairline); }
 }
+
+/* Numista search inside the quick add box */
+.qs-numista { align-self: flex-start; }
+.numista { display: flex; flex-direction: column; gap: 0.7rem; border-top: 1px solid var(--hairline); padding-top: 0.8rem; }
+.numista-search { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem auto; gap: 0.5rem; align-items: end; }
+.numista-search label { margin: 0; }
+.numista p { margin: 0; }
+.numista-hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; max-height: 22rem; overflow-y: auto; }
+.numista-hits button { width: 100%; display: grid; grid-template-columns: 52px 1fr; gap: 0.75rem; align-items: center; text-align: left; padding: 0.4rem 0.6rem; min-height: 64px; font-weight: 400; }
+.numista-hits img, .numista-noimg { width: 52px; height: 52px; object-fit: contain; background: var(--well); border-radius: 50%; display: block; }
+.numista-hit-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.numista-hit-text strong { font-size: var(--step-0); }
+.numista-chosen { display: flex; flex-direction: column; gap: 0.75rem; }
+.numista-coin { display: grid; grid-template-columns: auto auto 1fr; gap: 0.75rem; align-items: start; }
+.numista-coin img { width: 84px; height: 84px; object-fit: contain; background: var(--well); border-radius: 50%; }
+.numista-coin > div { display: grid; gap: 0.25rem; }
+.numista-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: space-between; }
+.market-numista { margin: 0 0 0.85rem; }
+@media (max-width: 560px) {
+  .numista-search { grid-template-columns: 1fr 5.5rem; }
+  .numista-search button { grid-column: 1 / -1; }
+  .numista-coin { grid-template-columns: auto auto; }
+  .numista-coin > div { grid-column: 1 / -1; }
+}

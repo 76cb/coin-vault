@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -239,6 +240,7 @@ class CoinDetails(Base):
     mint: Mapped[str | None] = mapped_column(String(120))
     diameter_mm: Mapped[Decimal | None] = mapped_column(Numeric(7, 2))
     numista_id: Mapped[int | None] = mapped_column(Integer)
+    numista_issue_id: Mapped[int | None] = mapped_column(Integer)
     pcgs_number: Mapped[str | None] = mapped_column(String(20))
     redbook_number: Mapped[str | None] = mapped_column(String(30))
     variety_notes: Mapped[str | None] = mapped_column(Text)
@@ -501,6 +503,16 @@ class QuotaPeriod(Base):
     provider_limit: Mapped[int | None] = mapped_column(Integer)
     provider_used: Mapped[int | None] = mapped_column(Integer)
     synced_at: Mapped[dt.datetime | None] = mapped_column(TS)
+
+
+class ProviderCache(Base):
+    """Answers from catalogue providers kept for a while, so looking at the same coin again costs no request."""
+
+    __tablename__ = "provider_cache"
+    provider_key: Mapped[str] = mapped_column(String(30), primary_key=True)
+    cache_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    data: Mapped[Any] = mapped_column(JSON)
+    fetched_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
 
 
 class ApiCallLog(Base):

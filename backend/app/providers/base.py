@@ -150,6 +150,23 @@ CATALOG: dict[str, ProviderInfo] = {
         "PCGS allows 1,000 calls a day.",
         available_from=2,
     ),
+    "numista": ProviderInfo(
+        key="numista",
+        kind="catalog",
+        label="Numista",
+        needs_key=True,
+        has_quota=True,
+        quota_period="calendar_month",
+        default_cap=1800,
+        default_priority=20,
+        rate_limited=False,
+        docs_url="https://en.numista.com/api/doc/index.php",
+        key_url="https://en.numista.com/api/",
+        note="The world coin catalogue: search it from Add item to fill in a coin's weight, metal, fineness, years and photos, "
+        "and get Numista's price estimate by grade under Market value. Coin details are kept for 30 days, so looking at the "
+        "same coin again uses no requests. Set the cap to your plan (the free plan allows 2,000 requests a month).",
+        available_from=4,
+    ),
     "soldcomps": ProviderInfo(
         key="soldcomps",
         kind="comps",

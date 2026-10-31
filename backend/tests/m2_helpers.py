@@ -35,6 +35,22 @@ class FakeProviders:
             "Images": [{"Thumbnail": "https://images.pcgs.com/t.jpg", "Fullsize": "https://images.pcgs.com/f.jpg"}],
             "MajorVariety": "", "MinorVariety": "", "DieVariety": "", "AuctionList": [], "SeriesName": "America the Beautiful Quarters",
             "Category": "Washington Quarters", "HasTrueViewImage": False, "ImageReady": True, "IsNFCSecure": False}}
+        self.numista_types = {
+            # the spec's own example for N# 420, plus a silver dollar with two issues
+            420: {"id": 420, "url": "https://en.numista.com/420", "title": "5 Cents - Victoria",
+                  "issuer": {"code": "canada", "name": "Canada"}, "min_year": 1858, "max_year": 1901,
+                  "value": {"text": "5 Cents", "numeric_value": 0.05, "currency": {"id": 44, "name": "Canadian dollar"}},
+                  "composition": {"text": "Silver (.925) (.925 silver .075 copper)"}, "weight": 1.167, "size": 15.494,
+                  "obverse": {"thumbnail": "https://en.numista.com/catalogue/photos/canada/1009-180.jpg"},
+                  "reverse": {"thumbnail": "https://en.numista.com/catalogue/photos/canada/1010-180.jpg"},
+                  "references": [{"catalogue": {"id": 3, "code": "KM"}, "number": "2"}, {"catalogue": {"id": 24, "code": "Schön"}, "number": "2"}]},
+        }
+        self.numista_issues = {420: [
+            {"id": 9001, "is_dated": True, "year": 1858, "gregorian_year": 1858, "mintage": 1500000},
+            {"id": 9002, "is_dated": True, "year": 1870, "gregorian_year": 1870, "mintage": 2800000},
+            {"id": 9003, "is_dated": True, "year": 1870, "gregorian_year": 1870, "mint_letter": "H", "mintage": 100000},
+        ]}
+        self.numista_prices = {9001: [{"grade": "f", "price": 18}, {"grade": "vf", "price": 30}, {"grade": "xf", "price": 55}]}
         self.soldcomps_used = 12
         self.scrape_params: list[dict] = []
         self.sold_items = [_sold("1", "40.00", "5.00", "2026-10-20"), _sold("2", "50.00", None, "2026-10-12"),
@@ -99,6 +115,25 @@ class FakeProviders:
                 }],
             }
             return httpx.Response(200, json=body, headers=headers)
+        if url.host == "api.numista.com":
+            if request.headers.get("Numista-API-Key") != "numista-key":
+                return httpx.Response(401, json={"error_message": "Invalid API key"})
+            parts = url.path.removeprefix("/v3/").split("/")
+            if parts == ["types"]:
+                q = url.params.get("q", "").lower()
+                hits = [{k: t[k] for k in ("id", "title", "issuer", "min_year", "max_year")} | {"obverse_thumbnail": t["obverse"]["thumbnail"]}
+                        for t in self.numista_types.values() if any(w in t["title"].lower() for w in q.split())]
+                return httpx.Response(200, json={"count": len(hits), "types": hits})
+            tid = int(parts[1])
+            if tid not in self.numista_types:
+                return httpx.Response(404, json={"error_message": "Type not found"})
+            if len(parts) == 2:
+                return httpx.Response(200, json=self.numista_types[tid])
+            if parts[2:] == ["issues"]:
+                return httpx.Response(200, json=self.numista_issues.get(tid, []))
+            if parts[2] == "issues" and parts[4:] == ["prices"]:
+                return httpx.Response(200, json={"currency": url.params.get("currency", "EUR"), "prices": self.numista_prices.get(int(parts[3]), [])})
+            return httpx.Response(404, json={"error_message": "Not found"})
         if url.host == "api.pcgs.com":
             if request.headers.get("Authorization") != "bearer pcgs-token":
                 return httpx.Response(500, json={"Message": "An error has occurred."})

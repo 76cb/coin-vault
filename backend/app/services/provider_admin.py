@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.crypto import EncryptionUnavailable
 from app.logging_setup import log
 from app.models import ApiCallLog, ProviderConfig, utcnow
-from app.providers import pcgs, soldcomps
+from app.providers import numista, pcgs, soldcomps
 from app.providers.base import CATALOG, ProviderError, UsageInfo, http_client
 from app.providers.spot import SPOT_PROVIDERS, MetalsDev
 from app.services import providers as psvc
@@ -85,6 +85,11 @@ def check_provider(db: Session, cfg: ProviderConfig, currency: str, client: http
                         if exc.http_status != 200 and exc.http_status != 204:
                             raise
                         message = "Token accepted. (The test looks up a cert that doesn't exist; it uses one of today's calls.)"
+                elif cfg.provider_key == "numista":
+                    # one search request (it counts against the month's quota)
+                    total, _ = numista.Numista(client, key).search("Morgan dollar", count=1)
+                    cost, usage = 1, None
+                    message = f"Key accepted. Numista found {total:,} types for “Morgan dollar”."
                 elif cfg.provider_key == "metal_sentinel":
                     message, usage = SPOT_PROVIDERS["metal_sentinel"].check(client, key)
                     cost = 1
