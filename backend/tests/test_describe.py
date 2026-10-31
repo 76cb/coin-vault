@@ -96,3 +96,25 @@ def test_label_and_metal_aware_match(api):
     keys = [c["key"] for c in api.get("/api/v1/compositions/match", params={
         "country": "United States", "denomination": "$1", "year": 2021, "series": "American Silver Eagle"}).json()]
     assert keys and all(not k.startswith(("age-", "buffalo")) for k in keys)
+
+
+
+def test_users_silver_proofs(api):
+    q = api.post("/api/v1/items/describe", json={"text": "2015-S 25C PCGS PR70DCAM Bombay Hook NP - Silver First Strike"}).json()
+    assert q["condition"]["grade_text"] == "PR70" and q["condition"]["designations"] == ["DCAM", "First Strike"]
+    assert q["details"]["series"] == "America the Beautiful" and q["details"]["denomination"] == "25c"
+    assert [c["key"] for c in q["compositions"]][:1] == ["us-silver-proof-quarter-90"]
+    own = api.post("/api/v1/items/describe", json={"text": "2015 first strike SILVER QUARTER PR70 BOMBAY HOOK NP"}).json()
+    assert own["compositions"][0]["key"] == "us-silver-proof-quarter-90"
+    new = api.post("/api/v1/items/describe", json={"text": "2022-S American Women Silver Proof Quarter"}).json()
+    assert new["compositions"][0]["key"] == "us-silver-proof-quarter-999"
+    clad = api.post("/api/v1/items/describe", json={"text": "2015-S Bombay Hook NP Proof Quarter PR69 DCAM"}).json()
+    assert all(not c["key"].startswith("us-silver-proof") for c in clad["compositions"])  # no "silver": copper-nickel
+    s = api.post("/api/v1/items/describe", json={"text": "2008-S State Quarters Silver Proof Set- with box & certificate of authenticity"}).json()
+    assert s["compositions"][0]["key"] == "us-set-quarters-states" and s["notes"] == ["Original government packaging with certificate"]
+    full = api.post("/api/v1/items/describe", json={"text": "2012 S Silver Proof Set OGP"}).json()
+    assert full["compositions"][0]["key"] == "us-set-silver-1999"
+    bicent = api.post("/api/v1/items/describe", json={"text": "1976-S Bicentennial Silver Quarter 40% proof"}).json()
+    assert bicent["compositions"][0]["key"] == "us-bicentennial-quarter-40"
+    old = api.post("/api/v1/items/describe", json={"text": "1942 S Washington Silver Quarter"}).json()
+    assert old["compositions"][0]["key"] == "us-quarter-90"

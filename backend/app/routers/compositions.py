@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import Principal, read_items, write_items
+from app.compositions_seed import SILVER_ONLY_PREFIXES
 from app.models import Composition, ItemMetalContent, LotDetails
 from app.schemas import Metal
 from app.services.items import compute_pure_toz
@@ -130,6 +131,9 @@ def match(
     scored: list[tuple[int, Composition]] = []
     for c in db.scalars(select(Composition).where(_visible(principal), Composition.per_face_unit.is_(False))):
         if metal and c.metal != metal:
+            continue
+        # silver proofs and 40% Bicentennials share years and mint mark with copper-nickel coins
+        if c.key.startswith(SILVER_ONLY_PREFIXES) and metal != "Ag":
             continue
         score = 0
         if country and c.country and country.strip().lower() in (c.country.lower(), "usa", "us", "u.s.") and c.country == "United States":

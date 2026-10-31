@@ -18,9 +18,9 @@ GRADE_RE = re.compile(r"\b(MS|PR|PF|SP|AU|XF|EF|VF|VG|AG|FR|PO|F|G)[\s-]?(\d{1,2
 
 # (pattern, designation as written on the label)
 DESIGNATIONS: list[tuple[str, str]] = [
-    (r"\bultra\s*cameo\b|\bucam\b", "UCAM"),
-    (r"\bdeep\s*cameo\b|\bdcam\b", "DCAM"),
-    (r"\bdmpl\b|\bdeep\s*mirror\s*proof\s*like\b", "DMPL"),
+    (r"\bultra\s*cameo\b|(?<![a-z])ucam\b", "UCAM"),
+    (r"\bdeep\s*cameo\b|(?<![a-z])dcam\b", "DCAM"),
+    (r"(?<![a-z])dmpl\b|\bdeep\s*mirror\s*proof\s*like\b", "DMPL"),
     (r"\bfirst\s*day\s*of\s*issue\b|\bfdoi\b|\bfdi\b", "First Day of Issue"),
     (r"\bfirst\s*production\b", "First Production"),
     (r"\bfirst\s*strike\b", "First Strike"),
@@ -37,7 +37,7 @@ DESIGNATIONS: list[tuple[str, str]] = [
     (r"\bfull\s*head\b|\bfh\b", "FH"),
     (r"\bcac\b", "CAC"),
     (r"(?<!deep )(?<!ultra )\bcameo\b", "Cameo"),
-    (r"\bpl\b|\bproof\s*like\b|\bprooflike\b", "PL"),
+    (r"(?<![a-z])(?<!dm)pl\b|\bproof\s*like\b|\bprooflike\b", "PL"),
     (r"\bdetails\b", "Details"),
 ]
 
@@ -64,6 +64,10 @@ US_SERIES: list[tuple[str, str, str]] = [  # (pattern, series name, denomination
     (r"\bkennedy\b", "Kennedy", "50c"),
     (r"\bstanding\s*liberty\b", "Standing Liberty", "25c"),
     (r"\bwashington\s*quarter\b", "Washington", "25c"),
+    (r"\bamerica\s*the\s*beautiful\b|\batb\b|\bnational\s*park\b|\bnp\b", "America the Beautiful", "25c"),
+    (r"\bstate\s*quarter\b|\b50\s*states?\b", "50 State Quarters", "25c"),
+    (r"\bamerican\s*women\b", "American Women", "25c"),
+    (r"\bbicentennial\b|\b1776[-\s]1976\b", "Bicentennial", None),
     (r"\bmercury\b|\bwinged\s*liberty\b", "Mercury", "10c"),
     (r"\broosevelt\b", "Roosevelt", "10c"),
     (r"\bwar\s*nickel\b|\bjefferson\b", "Jefferson", "5c"),
@@ -254,6 +258,22 @@ def describe(text: str) -> Described:
         d.recognized.insert(0, "banknote")
         return _clean(d)
 
+    # a US silver proof set: the composition is the whole set's silver
+    if re.search(r"\bsilver\s*proof\s*set\b", low) and d.details.get("year"):
+        y = d.details["year"]
+        quarters_only = bool(re.search(r"\bquarters?\b", low))
+        key = _proof_set_key(y, quarters_only)
+        d.item_type = "coin"
+        d.metal = "Ag"
+        d.details["country"] = "United States"
+        d.details["series"] = "Silver Proof Set" if not quarters_only else "Quarters Silver Proof Set"
+        d.details["denomination"] = "set"
+        d.composition_key = key
+        if re.search(r"\b(box|ogp|coa|certificate\s*of\s*authenticity)\b", low):
+            d.notes.append("Original government packaging with certificate")
+        d.recognized.insert(0, f"{y}-S {d.details['series'].lower()}")
+        return _clean(d)
+
     lot = LOT_RE.search(raw)
     if lot and lot.group(1):
         d.item_type = "lot"
@@ -335,9 +355,10 @@ def describe(text: str) -> Described:
     for pat, series, denom in US_SERIES:
         if re.search(pat, low):
             d.details["series"] = series
-            d.details["denomination"] = denom
+            if denom:
+                d.details["denomination"] = denom
             d.details["country"] = "United States"
-            d.recognized.insert(0, f"{series} {denom}")
+            d.recognized.insert(0, f"{series} {denom or ''}".strip())
             break
     if "denomination" not in d.details:
         dn = DENOM_RE.search(raw)
@@ -348,9 +369,30 @@ def describe(text: str) -> Described:
                 d.details["denomination"] = f"{dn.group(2)}c"
             elif dn.group(3):
                 d.details["denomination"] = WORD_DENOMS[re.sub(r"\s+", " ", dn.group(3).lower())]
+    if d.item_type == "coin" and d.metal == "Ag" and re.search(r"\bproof\b|\bpr\s?\d|\bpf\s?\d", low) and d.details.get("year", 0) >= 1992:
+        d.recognized.append("silver proof")
     if re.search(r"\b(us|u\.s\.|usa|united\s*states|american)\b", low) and "country" not in d.details:
         d.details["country"] = "United States"
     return _clean(d)
+
+
+def _proof_set_key(year: int, quarters_only: bool) -> str | None:
+    if quarters_only:
+        for y0, y1, key in ((1999, 2008, "us-set-quarters-states"), (2009, 2009, "us-set-quarters-dc"),
+                            (2010, 2018, "us-set-quarters-atb-90"), (2019, 2020, "us-set-quarters-atb-999"),
+                            (2022, 2025, "us-set-quarters-women")):
+            if y0 <= year <= y1:
+                return key
+        return None
+    if 1992 <= year <= 1998:
+        return "us-set-silver-1992"
+    if year == 2009:
+        return "us-set-silver-2009"
+    if 1999 <= year <= 2018:
+        return "us-set-silver-1999"
+    if 2019 <= year <= 2025 and year != 2021:
+        return "us-set-silver-999"
+    return None
 
 
 def _clean(d: Described) -> Described:

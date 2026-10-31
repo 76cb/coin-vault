@@ -222,4 +222,45 @@ COINS_V2 = [
 
 ROWS_V2 = [_bar(r, m, size, f, src) for r, m, f, sizes, src in BAR_LINES for size in sizes] + BAR_PRODUCTS + COINS_V2
 
-ROWS = ROWS_V1 + ROWS_V2
+
+# --- Version 3: modern US silver proofs and the 40% Bicentennial coins (migration 0005) -----
+# Only suggested when the text says "silver": copper-nickel proofs share the same years and mint mark.
+
+US_MINT_999 = f"US Mint via CoinNews (quarter 6.343 g, 99.9% silver); Greysheet specs for dime 2.537 g and half 12.685 g ({CHECKED})"
+ROWS_V3 = [
+    _coin("us-silver-proof-dime-90", "US silver proof dime, 90% silver (1992–2018-S)", "10c", 1992, 2018, "Ag", "2.50", "0.900", ["S"]),
+    _coin("us-silver-proof-quarter-90", "US silver proof quarter, 90% silver (1992–2018-S)", "25c", 1992, 2018, "Ag", "6.25", "0.900", ["S"]),
+    _coin("us-silver-proof-half-90", "US silver proof half dollar, 90% silver (1992–2018-S)", "50c", 1992, 2018, "Ag", "12.50", "0.900", ["S"]),
+    _coin("us-silver-proof-dime-999", "US silver proof dime, .999 silver (2019-S on)", "10c", 2019, None, "Ag", "2.537", "0.999", ["S"], cite=US_MINT_999),
+    _coin("us-silver-proof-quarter-999", "US silver proof quarter, .999 silver (2019-S on)", "25c", 2019, None, "Ag", "6.343", "0.999", ["S"], cite=US_MINT_999),
+    _coin("us-silver-proof-half-999", "US silver proof half dollar, .999 silver (2019-S on)", "50c", 2019, None, "Ag", "12.685", "0.999", ["S"], cite=US_MINT_999),
+    _coin("us-bicentennial-quarter-40", "US Bicentennial quarter, 40% silver (1776–1976-S)", "25c", 1975, 1976, "Ag", "5.75", "0.400", ["S"]),
+    _coin("us-bicentennial-half-40", "US Bicentennial half dollar, 40% silver (1776–1976-S)", "50c", 1975, 1976, "Ag", "11.50", "0.400", ["S"]),
+]
+
+_D90, _Q90, _H90 = _pure("2.50", "0.900"), _pure("6.25", "0.900"), _pure("12.50", "0.900")
+_D999, _Q999, _H999 = _pure("2.537", "0.999"), _pure("6.343", "0.999"), _pure("12.685", "0.999")
+SET_CITE = "Sum of the set's silver coins (per-coin specs above); clad cent, nickel and dollars carry no silver"
+
+
+def _set(key, label, y0, y1, pure):
+    return dict(
+        key=key, label=label, country="United States", denomination="set", year_from=y0, year_to=y1, mint_marks=["S"],
+        metal="Ag", fineness=None, gross_weight_g=None, pure_toz=pure.quantize(Q), per_face_unit=False, citation=SET_CITE,
+    )
+
+
+ROWS_V3 += [
+    _set("us-set-quarters-states", "US 50 State Quarters silver proof set, 5 quarters 90% (1999–2008-S)", 1999, 2008, 5 * _Q90),
+    _set("us-set-quarters-dc", "US DC and Territories quarters silver proof set, 6 quarters 90% (2009-S)", 2009, 2009, 6 * _Q90),
+    _set("us-set-quarters-atb-90", "US America the Beautiful quarters silver proof set, 5 quarters 90% (2010–2018-S)", 2010, 2018, 5 * _Q90),
+    _set("us-set-quarters-atb-999", "US America the Beautiful quarters silver proof set, 5 quarters .999 (2019–2020-S)", 2019, 2020, 5 * _Q999),
+    _set("us-set-quarters-women", "US American Women quarters silver proof set, 5 quarters .999 (2022–2025-S)", 2022, 2025, 5 * _Q999),
+    _set("us-set-silver-1992", "US Silver Proof Set: dime, quarter, half, 90% (1992–1998-S)", 1992, 1998, _D90 + _Q90 + _H90),
+    _set("us-set-silver-1999", "US Silver Proof Set: dime, 5 quarters, half, 90% (1999–2008, 2010–2018-S)", 1999, 2018, _D90 + 5 * _Q90 + _H90),
+    _set("us-set-silver-2009", "US Silver Proof Set: dime, 6 quarters, half, 90% (2009-S)", 2009, 2009, _D90 + 6 * _Q90 + _H90),
+    _set("us-set-silver-999", "US Silver Proof Set: dime, 5 quarters, half, .999 (2019–2020, 2022–2025-S)", 2019, 2025, _D999 + 5 * _Q999 + _H999),
+]
+SILVER_ONLY_PREFIXES = ("us-silver-proof-", "us-bicentennial-", "us-set-")
+
+ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3
