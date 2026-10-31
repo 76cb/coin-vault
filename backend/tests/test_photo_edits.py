@@ -182,3 +182,24 @@ def test_find_the_coin(api, images):
     bar = upload(api, item["id"], [("bar.png", solid(900, 400, (190, 190, 195)), "image/png")]).json()[0]
     r = api.post(f"/api/v1/photos/{bar['id']}/find-coin", json={})
     assert r.status_code == 404 and "Drag the circle" in r.json()["detail"]
+
+
+def test_full_size_copy_is_made_once_and_cleaned_up(api, images):
+    item = make_item(api)
+    raw = images["jpeg"](images["coin"](seed=14).resize((900, 900)))
+    photo = upload(api, item["id"], [("f.jpg", raw, "image/jpeg")]).json()[0]
+    p = put(api, photo["id"], {"crop": {"x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8}, "circle": True}).json()
+    ehash = photo_edit.edit_hash(p["edits"])
+    key = photo_edit.full_key(p["sha256"], ehash, "png")
+    assert storage.exists(key)  # made right after saving, before anyone opens it
+    first = api.get(p["urls"]["edited"])
+    assert first.status_code == 200 and first.headers["content-type"] == "image/png"
+    assert 'filename="f-edited.png"' in first.headers["content-disposition"]
+    assert api.get(p["urls"]["edited"]).content == first.content
+    # new edits: the old full-size copy goes, a new one comes
+    p2 = put(api, photo["id"], {"crop": {"x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8}, "circle": True, "background": "black"}).json()
+    assert not storage.exists(key)
+    key2 = photo_edit.full_key(p2["sha256"], photo_edit.edit_hash(p2["edits"]), "jpg")
+    assert storage.exists(key2)
+    assert api.delete(f"/api/v1/photos/{photo['id']}").status_code == 204
+    assert not storage.exists(key2)

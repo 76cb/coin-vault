@@ -99,7 +99,7 @@ def release_file(db: Session, storage_key: str, sha256: str) -> None:
     storage.remove(storage_key)
     for size in storage.DERIVED_SIZES:
         storage.remove(storage.derived_key(sha256, size))
-    storage.remove_matching(storage.derived_key(sha256, "x").rsplit("/", 1)[0], f"{sha256}_*_e*.webp")
+    storage.remove_matching(storage.derived_key(sha256, "x").rsplit("/", 1)[0], f"{sha256}_*_e*.*")  # edited copies: thumb, medium and full size
 
 
 def release_document_file(db: Session, storage_key: str) -> None:

@@ -14,7 +14,7 @@ Colour on 0..1 values per channel:
 Straighten: rotate by `straighten` degrees (clockwise), then zoom so the frame has no empty corners.
 Crop: x, y, w, h as fractions (0..1) of the straightened frame.
 Circle (last): everything outside the circle inscribed in the crop becomes the background: clear
-(transparent), white or black. The edge is anti-aliased (mask drawn at 4x, then reduced).
+(transparent), white or black. The edge is anti-aliased (alpha from each pixel's distance to the edge).
 """
 
 from __future__ import annotations
@@ -73,12 +73,11 @@ def _geometry(img: Image.Image, e: dict[str, Any]) -> Image.Image:
 
 
 def _box_blur(a: np.ndarray) -> np.ndarray:
-    p = np.pad(a, ((1, 1), (1, 1), (0, 0)), mode="edge")
-    out = np.zeros_like(a)
-    for dy in range(3):
-        for dx in range(3):
-            out += p[dy : dy + a.shape[0], dx : dx + a.shape[1]]
-    return out / 9.0
+    """3x3 box blur with edges repeated, done as a 3-wide pass then a 3-tall one (same result, far less work)."""
+    p = np.pad(a, ((0, 0), (1, 1), (0, 0)), mode="edge")
+    rows = p[:, :-2] + p[:, 1:-1] + p[:, 2:]
+    p = np.pad(rows, ((1, 1), (0, 0), (0, 0)), mode="edge")
+    return (p[:-2] + p[1:-1] + p[2:]) / 9.0
 
 
 def _colour(img: Image.Image, e: dict[str, Any]) -> Image.Image:
@@ -109,13 +108,20 @@ def _colour(img: Image.Image, e: dict[str, Any]) -> Image.Image:
 BACKGROUNDS = {"white": (255, 255, 255), "black": (0, 0, 0)}
 
 
+def _circle_mask(w: int, h: int) -> Image.Image:
+    """The ellipse inside w x h, with a one-pixel anti-aliased edge (worked out per pixel, so it's fast at any size)."""
+    yy = (np.arange(h, dtype=np.float32) + 0.5 - h / 2) / (h / 2)
+    xx = (np.arange(w, dtype=np.float32) + 0.5 - w / 2) / (w / 2)
+    d = np.sqrt(xx[None, :] ** 2 + yy[:, None] ** 2)  # 1 on the ellipse
+    alpha = np.clip((1 - d) * (min(w, h) / 2) + 0.5, 0, 1)  # distance to the edge, in pixels
+    return Image.fromarray((alpha * 255 + 0.5).astype(np.uint8), "L")
+
+
 def _circle(img: Image.Image, e: dict[str, Any]) -> Image.Image:
     if not e.get("circle"):
         return img
     w, h = img.size
-    big = Image.new("L", (w * 4, h * 4), 0)
-    ImageDraw.Draw(big).ellipse((0, 0, w * 4 - 1, h * 4 - 1), fill=255)
-    mask = big.resize((w, h), Image.Resampling.LANCZOS)
+    mask = _circle_mask(w, h)
     rgb = img.convert("RGB")
     bg = e.get("background", "clear")
     if bg in BACKGROUNDS:
@@ -155,18 +161,39 @@ def write_edited(storage_key: str, sha256: str, edits: dict[str, Any]) -> tuple[
     return ehash, width, height
 
 
-def full_image(storage_key: str, edits: dict[str, Any]) -> tuple[bytes, str, str]:
-    """The edited photo at full size, for download: (bytes, media type, file extension).
-    A JPEG, or a PNG when it's cut out as a circle on a clear background (a JPEG can't be transparent)."""
+def full_key(sha256: str, ehash: str, ext: str) -> str:
+    return f"derived/{sha256[:2]}/{sha256[2:4]}/{sha256}_full_e{ehash}.{ext}"
+
+
+def full_image(storage_key: str, sha256: str, edits: dict[str, Any]) -> tuple[str, str, str]:
+    """The edited photo at full size, for opening or download: (stored key, media type, extension).
+    Rendered once and kept with the other edited copies. A JPEG, or a PNG when it has a clear
+    background (a JPEG can't be transparent)."""
+    ehash = edit_hash(edits)
+    for ext, mime in (("jpg", "image/jpeg"), ("png", "image/png")):
+        if storage.exists(full_key(sha256, ehash, ext)):
+            return full_key(sha256, ehash, ext), mime, ext
     with Image.open(storage.path_for(storage_key)) as original:
         original.load()
         img = render(original, edits, None)
     buf = io.BytesIO()
     if img.mode == "RGBA":
-        img.save(buf, "PNG", optimize=True)
-        return buf.getvalue(), "image/png", "png"
-    img.convert("RGB").save(buf, "JPEG", quality=92, optimize=True)
-    return buf.getvalue(), "image/jpeg", "jpg"
+        img.save(buf, "PNG", compress_level=6)
+        ext, mime = "png", "image/png"
+    else:
+        img.convert("RGB").save(buf, "JPEG", quality=92)
+        ext, mime = "jpg", "image/jpeg"
+    key = full_key(sha256, ehash, ext)
+    storage.write_bytes(key, buf.getvalue())
+    return key, mime, ext
+
+
+def prepare_full(storage_key: str, sha256: str, edits: dict[str, Any]) -> None:
+    """Render the full-size copy ahead of time (after a save), so opening it is instant. Failures only cost speed."""
+    try:
+        full_image(storage_key, sha256, edits)
+    except Exception:  # noqa: BLE001 - it's made again when opened
+        pass
 
 
 # --- Finding the coin --------------------------------------------------------------------------
@@ -280,3 +307,5 @@ def display_size(storage_key: str) -> tuple[int, int]:
 def remove_edited(sha256: str, ehash: str) -> None:
     for size in storage.DERIVED_SIZES:
         storage.remove(edited_key(sha256, size, ehash))
+    for ext in ("jpg", "png"):
+        storage.remove(full_key(sha256, ehash, ext))

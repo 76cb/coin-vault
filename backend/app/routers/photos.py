@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -99,7 +99,10 @@ def _drop_edited(db: Session, photo: Photo) -> None:
 
 
 @router.put("/photos/{photo_id}/edits", response_model=PhotoOut)
-def set_edits(photo_id: int, body: PhotoEditsIn, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+def set_edits(
+    photo_id: int, body: PhotoEditsIn, background: BackgroundTasks,
+    principal: Principal = Depends(write_items), db: Session = Depends(get_db),
+):
     """Save crop, straighten and colour settings; the display copies are rendered from the untouched original."""
     photo = _photo(db, principal, photo_id)
     edits = body.edits.model_dump(exclude_defaults=True) if body.edits and not body.edits.is_identity() else None
@@ -116,6 +119,8 @@ def set_edits(photo_id: int, body: PhotoEditsIn, principal: Principal = Depends(
     photo.edits = edits
     photo.width, photo.height = width, height
     db.commit()
+    if edits:  # the full-size copy takes a few seconds on a big photo: make it now, after replying
+        background.add_task(photo_edit.prepare_full, photo.storage_key, photo.sha256, edits)
     return item_svc.photo_out(photo)
 
 
@@ -205,10 +210,8 @@ def serve_photo(photo_id: int, size: PhotoSize, principal: Principal = Depends(r
         if not photo.edits:
             return _serve(photo.storage_key, photo.sha256, photo.mime, "original", photo.original_filename)
         stem = (photo.original_filename or f"photo-{photo.id}").rsplit(".", 1)[0]
-        data, mime, ext = photo_edit.full_image(photo.storage_key, photo.edits)
-        return Response(data, media_type=mime, headers={
-            "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
-            "Content-Disposition": f'inline; filename="{stem}-edited.{ext}"'})
+        key, mime, ext = photo_edit.full_image(photo.storage_key, photo.sha256, photo.edits)
+        return _serve_key(key, mime, f"{stem}-edited.{ext}")
     if photo.edits and size in ("thumb", "medium"):
         key = photo_edit.edited_key(photo.sha256, size, photo_edit.edit_hash(photo.edits))
         if not storage.exists(key):  # e.g. derived files cleared; render them again
