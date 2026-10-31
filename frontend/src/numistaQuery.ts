@@ -16,11 +16,12 @@ const US_DENOM_WORDS: Record<string, string> = {
 const NOISE = [
   /\b(PCGS|NGC|ANACS|ICG|CACG|SEGS|CAC|OGH)\b/gi,
   /\b(MS|PR|PF|SP|AU|XF|EF|VF|VG|AG|FR|PO)[\s-]?\d{1,2}\+?(?=\W|$)/gi,
-  /\b(first|early|advanced?)\s+(day\s+of\s+issue|production|strike|releases?)\b/gi,
-  /\blast\s+day\s+of\s+production\b/gi,
+  /\b(first|early|advanced?)\s+(day\s+of\s+issue|prod(uction)?|strike|releases?)\b/gi,
+  /\blast\s+day\s+(of\s+)?prod(uction)?\b/gi,
   /\b(ultra|deep)\s+cameo\b|\b(UCAM|DCAM|DMPL|PL|FDOI|FDI|FBL|FB|FS|FH)\b|\bcameo\b|\bproof[\s-]?like\b/gi,
   /\bT-?[12]\b|\btype\s+[12]\b/gi,
   /\b(BU|UNC|GEM|CHOICE|NICE|RARE|KEY\s+DATE|LOT|COIN|COINS|SLAB|HOLDER|GRADED|CERTIFIED)\b/gi,
+  /\$\s?\d+(\.\d+)?/g, // "$1": Numista words denominations ("1 Dollar")
   /\b\d{6,}-\d{3}\b|\b\d{6,}\b/g, // cert numbers (NGC writes 1234567-001)
   /\bcert(ificate)?\b\s*#?|\bno\.?\s*#?(?=\s|$)/gi,
 ];
@@ -66,6 +67,7 @@ export interface Wants {
   burnished: boolean; // "Burnished", or an SP grade
   reverseProof: boolean;
   type2: boolean; // "T2", "Type 2"
+  type1: boolean; // "T1", "Type 1"
   mark: string; // mint mark, upper case, or ""
 }
 
@@ -79,6 +81,7 @@ export function wantsFrom(text: string, mark?: string | null): Wants {
     burnished: /\bburnished\b|\bSP[\s-]?\d{1,2}\b/i.test(text),
     reverseProof,
     type2: /\bT-?2\b|\btype\s*(2|ii)\b/i.test(text),
+    type1: /\bT-?1\b|\btype\s*(1|i)\b/i.test(text),
     mark: (mark ?? "").trim().toUpperCase(),
   };
 }
@@ -122,9 +125,18 @@ export function rankHits<T extends HitLike>(hits: T[], year: number | null, w: W
     if (year && h.min_year && h.max_year) s += year >= h.min_year && year <= h.max_year ? 3 : -3;
     const saysType2 = /type\s*(2|ii)\b/.test(t);
     if (w.type2) s += saysType2 ? 3 : /type\s*(1|i)\b/.test(t) ? -2 : 0;
-    else if (saysType2 && year && year < 2021) s -= 1;
+    else if (saysType2 && (w.type1 || (year && year < 2021))) s -= 3;
     if (/\bproof\b/.test(t)) s += w.proof === true ? 2 : w.proof === false ? -2 : 0;
     return s;
   };
   return hits.map((h, n) => ({ h, n, s: score(h) })).sort((a, b) => b.s - a.s || a.n - b.n).map((x) => x.h);
+}
+
+/** A Sheldon grade written in free text ("PCGS MS70" -> "MS70"), as the server reads it for estimates. */
+export function gradeInText(text: string): string | null {
+  for (const m of text.matchAll(/(?<![A-Za-z])(MS|PR|PF|SP|AU|XF|EF|VF|VG|AG|FR|PO|F|G)[\s-]?(\d{1,2})\b/g)) {
+    const n = Number(m[2]);
+    if (n >= 1 && n <= 70) return `${m[1].toUpperCase()}${n}`;
+  }
+  return null;
 }

@@ -118,3 +118,11 @@ def test_users_silver_proofs(api):
     assert bicent["compositions"][0]["key"] == "us-bicentennial-quarter-40"
     old = api.post("/api/v1/items/describe", json={"text": "1942 S Washington Silver Quarter"}).json()
     assert old["compositions"][0]["key"] == "us-quarter-90"
+
+
+def test_production_abbreviations():
+    from app.services.describe import describe
+
+    d = describe("2021 $1 Silver Eagle T1 Last Day Prod PCGS MS70 Legends of Life Robert Brazile")
+    assert "Last Day of Production" in d.condition["designations"] and d.condition["grade_text"] == "MS70"
+    assert "First Production" in describe("2021 ASE T2 First Prod. NGC MS69").condition["designations"]

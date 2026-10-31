@@ -200,3 +200,15 @@ def grade_for(sheldon: int | None, grade_text: str | None) -> str | None:
         if sheldon >= floor:
             return g
     return None
+
+
+_GRADE_IN_TEXT = re.compile(r"(?<![A-Za-z])(MS|PR|PF|SP|AU|XF|EF|VF|VG|AG|FR|PO|F|G)[\s-]?(\d{1,2})\b")
+
+
+def grade_in_text(text: str) -> tuple[str, int] | None:
+    """A Sheldon grade written in free text ("PCGS MS70" -> ("MS70", 70)); None when there isn't one."""
+    for m in _GRADE_IN_TEXT.finditer(text or ""):
+        n = int(m.group(2))
+        if 1 <= n <= 70:
+            return f"{m.group(1).upper()}{n}", n
+    return None

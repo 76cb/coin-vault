@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import { api, CompListing, CompsSearch, Item, money, NumistaIssue, NumistaType } from "../api";
 import { tidy } from "./ItemForm";
+import { gradeInText } from "../numistaQuery";
 import NumistaSearch, { numistaQueryForItem } from "./NumistaSearch";
 
 const WINDOWS: [string, string][] = [
@@ -347,7 +348,9 @@ function NumistaValue({ item, onChanged }: { item: Item; onChanged: () => Promis
   const det = item.details as Record<string, unknown>;
   const numistaId = typeof det.numista_id === "number" ? det.numista_id : null;
   const issueId = typeof det.numista_issue_id === "number" ? det.numista_issue_id : null;
-  const graded = Boolean(item.condition?.sheldon_grade || item.condition?.grade_text);
+  const filledGrade = item.condition?.grade_text || (item.condition?.sheldon_grade ? String(item.condition.sheldon_grade) : "");
+  const titleGrade = filledGrade ? null : gradeInText(`${item.title} ${String(det.variety_notes ?? "")}`);
+  const graded = Boolean(filledGrade || titleGrade);
   const [mode, setMode] = useState<null | "find" | "issue">(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -402,7 +405,10 @@ function NumistaValue({ item, onChanged }: { item: Item; onChanged: () => Promis
               {issueId ? "Change year" : "Pick the year"}
             </button>
             <button type="button" className="ghost small" onClick={() => setMode(mode === "find" ? null : "find")}>Link a different coin</button>
-            <span className="hint">Numista N# {numistaId}{!graded ? ". Add a grade to get an estimate." : ""}</span>
+            <span className="hint">
+              Numista N# {numistaId}
+              {!graded ? ". Add a grade to get an estimate." : titleGrade ? `. Using ${titleGrade} from the title; fill in the grade to change it.` : ""}
+            </span>
           </>
         ) : (
           <>

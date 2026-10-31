@@ -200,6 +200,12 @@ def estimate(item_id: int, principal: Principal = Depends(write_items), db: Sess
         raise HTTPException(422, "This needs the coin's Numista number (fill it in, or add the item from a Numista search)")
     cond = item.condition
     grade = numista.grade_for(cond.sheldon_grade if cond else None, cond.grade_text if cond else None)
+    grade_from = None
+    if grade is None:
+        # no grade filled in: use one written in the title or the variety notes ("PCGS MS70")
+        written = numista.grade_in_text(f"{item.title} {item.coin.variety_notes or ''}")
+        if written:
+            grade, grade_from = numista.grade_for(written[1], written[0]), written[0]
     if grade is None:
         raise HTTPException(422, "Add the coin's grade first; Numista's estimates go by grade (G to Unc)")
     type_id = item.coin.numista_id
@@ -222,7 +228,8 @@ def estimate(item_id: int, principal: Principal = Depends(write_items), db: Sess
     others = ", ".join(f"{numista.GRADE_NAMES[g]} {prices[g]:,.2f}" for g in numista.GRADES if g in prices)
     v = Valuation(
         item_id=item.id, kind="manual", value_each=prices[grade], currency=currency, as_of=utcnow().date(),
-        source=f"Numista estimate ({label})", notes=f"Numista's estimates for this issue: {others}.",
+        source=f"Numista estimate ({label})",
+        notes=(f"Grade {grade_from} taken from the title. " if grade_from else "") + f"Numista's estimates for this issue: {others}.",
         details={"numista": {"type_id": type_id, "issue_id": issue.id, "grade": grade,
                              "prices": {k: str(p) for k, p in prices.items()}}},
     )

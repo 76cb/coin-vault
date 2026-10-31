@@ -18,6 +18,7 @@ const DETAIL_LABELS: Record<string, string> = {
   mint: "Mint",
   diameter_mm: "Diameter (mm)",
   numista_id: "Numista N#",
+  numista_issue_id: "Numista issue",
   pcgs_number: "PCGS number",
   redbook_number: "Red Book number",
   variety_notes: "Variety, label or pedigree",

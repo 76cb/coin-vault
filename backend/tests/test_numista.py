@@ -111,3 +111,20 @@ def test_test_button_and_bad_key(api, fake):
     assert not r["ok"] and "refused the API key" in r["message"]
     r = api.get("/api/v1/numista/search", params={"q": "anything new"})
     assert r.status_code == 409 and "refused" in r.json()["detail"]
+
+
+def test_estimate_uses_a_grade_written_in_the_title(api, fake):
+    api.put("/api/v1/settings/providers/numista", json={"api_key": "numista-key"})
+    item = api.post("/api/v1/items", json={
+        "item_type": "coin", "title": "1858 Canada 5 cents PCGS VF30", "details": {"year": 1858, "numista_id": 420},
+    }).json()
+    r = api.post(f"/api/v1/items/{item['id']}/numista/estimate")
+    assert r.status_code == 201, r.text
+    assert r.json()["source"] == "Numista estimate (VF)" and r.json()["notes"].startswith("Grade VF30 taken from the title.")
+
+
+def test_grade_in_text():
+    from app.providers.numista import grade_in_text
+
+    assert grade_in_text("2021 $1 Silver Eagle T1 Last Day Prod PCGS MS70 Legends of Life") == ("MS70", 70)
+    assert grade_in_text("1921 Morgan dollar") is None and grade_in_text("VF-30") == ("VF30", 30)
