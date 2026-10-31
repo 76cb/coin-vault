@@ -9,6 +9,9 @@ export CV_MEDIA_ROOT="$WORK/media"
 export CV_FRONTEND_DIST="$HERE/dist"
 export CV_LOG_JSON=false
 export CV_LOG_LEVEL=WARNING
+# No outbound price polling during tests; a fixed throwaway key so provider keys can be saved.
+export CV_SCHEDULER_ENABLED=false
+export CV_ENCRYPTION_KEY="${CV_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
 PY="${CV_PYTHON:-$BACKEND/.venv/bin/python}"
 cd "$BACKEND"
 echo "${E2E_PASSWORD:-e2e-password-123}" | "$PY" -m app.cli create-admin --username "${E2E_USER:-admin}" --password-stdin >/dev/null

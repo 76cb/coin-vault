@@ -35,6 +35,10 @@ def ready(response: Response, _: Principal = Depends(current_principal), db: Ses
         checks["migrations"] = {"ok": current == head, "current": current, "head": head}
     except Exception as exc:  # pragma: no cover
         checks["migrations"] = {"ok": False, "error": type(exc).__name__}
+    from app import scheduler
+    from app.config import get_settings
+
+    checks["scheduler"] = {"ok": scheduler.running() or not get_settings().scheduler_enabled, "running": scheduler.running()}
     root = storage.media_root()
     checks["media"] = {"ok": root.is_dir() and os.access(root, os.W_OK)}
     ok = all(c["ok"] for c in checks.values())

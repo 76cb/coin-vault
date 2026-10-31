@@ -34,6 +34,8 @@ def configured(tmp_root):
     os.environ["CV_RUN_MIGRATIONS_ON_STARTUP"] = "false"
     os.environ["CV_LOG_JSON"] = "false"
     os.environ["CV_LOG_LEVEL"] = "WARNING"
+    os.environ["CV_SCHEDULER_ENABLED"] = "false"
+    os.environ["CV_ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
     from app.config import get_settings
     from app.db import get_engine, reset_engine
 
@@ -50,6 +52,11 @@ def configured(tmp_root):
 
 
 TABLES = [
+    "spot_prices",
+    "provider_configs",
+    "api_quota_periods",
+    "api_call_log",
+    "system_settings",
     "upload_files",
     "upload_groups",
     "document_links",
@@ -66,7 +73,6 @@ TABLES = [
     "items",
     "tags",
     "locations",
-    "compositions",
     "audit_log",
     "app_settings",
     "api_tokens",
@@ -85,10 +91,14 @@ def app(configured):
     with engine.begin() as conn:
         if engine.dialect.name == "postgresql":
             conn.execute(text("UPDATE items SET cover_photo_id = NULL"))
-            conn.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
+            # compositions references users, so TRUNCATE users CASCADE would wipe the seeded rows too.
+            conn.execute(text("DELETE FROM compositions WHERE owner_id IS NOT NULL"))
+            conn.execute(text(f"TRUNCATE {', '.join(t for t in TABLES if t != 'users')} RESTART IDENTITY CASCADE"))
+            conn.execute(text("DELETE FROM users"))
         else:
             for t in TABLES:
                 conn.execute(text(f"DELETE FROM {t}"))
+            conn.execute(text("DELETE FROM compositions WHERE owner_id IS NOT NULL"))
     throttle.reset()
     return create_app()
 

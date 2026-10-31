@@ -17,6 +17,20 @@ ENV_FILE=$ENV_DIR/coinvault.env
 
 # Run a command as the coinvault user with the app's environment loaded.
 as_app() { sudo -u coinvault bash -c 'set -a; . "$0"; set +a; exec "$@"' "$ENV_FILE" "$@"; }
+
+# Provider API keys are encrypted with this; create it once and never replace it.
+ensure_encryption_key() {
+  if ! grep -q '^CV_ENCRYPTION_KEY=..*' "$ENV_FILE"; then
+    local key
+    key="$(openssl rand -base64 32)"
+    if grep -q '^CV_ENCRYPTION_KEY=' "$ENV_FILE"; then
+      sed -i "s#^CV_ENCRYPTION_KEY=.*#CV_ENCRYPTION_KEY=$key#" "$ENV_FILE"
+    else
+      printf '\n# Encrypts provider API keys in the database. Keep it with your backups.\nCV_ENCRYPTION_KEY=%s\n' "$key" >> "$ENV_FILE"
+    fi
+    echo "Added CV_ENCRYPTION_KEY to $ENV_FILE."
+  fi
+}
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NODE_MAJOR=22
 
@@ -102,6 +116,7 @@ SQL
 else
   echo "Keeping existing $ENV_FILE."
 fi
+ensure_encryption_key
 
 # The app's database must be UTF-8, whatever the cluster default is.
 DB_ENCODING=$(sudo -u postgres psql -tAc "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='coinvault'")

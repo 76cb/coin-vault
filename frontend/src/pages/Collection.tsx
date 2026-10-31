@@ -119,7 +119,12 @@ export default function Collection() {
                 {[it.grade, it.quantity > 1 ? `×${it.quantity}` : null].filter(Boolean).join("  ")}
               </span>
               <span className="flip-foot">
-                <span className="tabular">{it.cost_basis ? money(it.cost_basis) : it.cost_basis_status === "unknown" ? "Cost unknown" : "—"}</span>
+                <span className="flip-values">
+                  {it.current && <span className="tabular" title="Current value">{money(it.current, it.currency)}</span>}
+                  <span className="tabular hint" title="What you paid">
+                    {it.cost_basis ? `paid ${money(it.cost_basis, it.currency)}` : it.cost_basis_status === "unknown" ? "cost unknown" : ""}
+                  </span>
+                </span>
                 {it.status !== "owned" && <span className={`status status-${it.status}`}>{STATUS_LABELS[it.status]}</span>}
               </span>
             </Link>

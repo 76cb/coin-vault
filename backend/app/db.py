@@ -25,6 +25,9 @@ def make_engine(url: str) -> Engine:
     kwargs: dict = {"pool_pre_ping": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
+    elif url.startswith("postgresql"):
+        # Timestamps come back in UTC whatever the server's own timezone is.
+        kwargs["connect_args"] = {"options": "-c timezone=UTC"}
     engine = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
 

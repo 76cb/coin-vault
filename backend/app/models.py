@@ -18,6 +18,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -411,4 +412,84 @@ class AppSetting(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     key: Mapped[str] = mapped_column(String(60))
+    value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON)
+
+
+# --- Milestone 2: prices, providers, quotas -----------------------------------------------
+
+PROVIDER_KINDS = ("spot", "comps", "catalog", "cert")
+
+
+class SpotPrice(Base):
+    """Every spot price point ever fetched (time series)."""
+
+    __tablename__ = "spot_prices"
+    __table_args__ = (
+        CheckConstraint(_in("metal", METALS), name="metal"),
+        Index("ix_spot_prices_lookup", "metal", "currency", "fetched_at"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    metal: Mapped[str] = mapped_column(String(2))
+    currency: Mapped[str] = mapped_column(String(3))
+    price_per_toz: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    source: Mapped[str] = mapped_column(String(30))
+    source_timestamp: Mapped[dt.datetime | None] = mapped_column(TS)
+    fetched_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
+
+
+class ProviderConfig(Base):
+    """Install-wide settings for an external data provider. API keys are stored encrypted."""
+
+    __tablename__ = "provider_configs"
+    __table_args__ = (CheckConstraint(_in("kind", PROVIDER_KINDS), name="kind"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_key: Mapped[str] = mapped_column(String(30), unique=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    api_key_encrypted: Mapped[str | None] = mapped_column(Text)
+    api_key_last4: Mapped[str | None] = mapped_column(String(4))
+    quota_cap: Mapped[int | None] = mapped_column(Integer)
+    settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_success_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_error_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)
+
+
+class QuotaPeriod(Base):
+    """Request counting for providers with a monthly quota (QuotaManager state)."""
+
+    __tablename__ = "api_quota_periods"
+    __table_args__ = (UniqueConstraint("provider_key", "period_start", name="uq_api_quota_periods_provider_start"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_key: Mapped[str] = mapped_column(String(30), index=True)
+    period_start: Mapped[dt.datetime] = mapped_column(TS)
+    period_end: Mapped[dt.datetime] = mapped_column(TS)
+    used: Mapped[int] = mapped_column(Integer, default=0)
+    provider_limit: Mapped[int | None] = mapped_column(Integer)
+    provider_used: Mapped[int | None] = mapped_column(Integer)
+    synced_at: Mapped[dt.datetime | None] = mapped_column(TS)
+
+
+class ApiCallLog(Base):
+    __tablename__ = "api_call_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_key: Mapped[str] = mapped_column(String(30), index=True)
+    endpoint: Mapped[str] = mapped_column(String(120))
+    context: Mapped[str | None] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20))  # ok, error, skipped
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    cost: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    detail: Mapped[str | None] = mapped_column(Text)
+    at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow, index=True)
+
+
+class SystemSetting(Base):
+    """Install-wide settings (spot polling, thresholds)."""
+
+    __tablename__ = "system_settings"
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON)

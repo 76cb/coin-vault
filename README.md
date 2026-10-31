@@ -9,8 +9,8 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 | Milestone | Scope | State |
 | --- | --- | --- |
 | 1 | Sign-in, items, photos, documents, bulk photo upload | Done |
-| 2 | Spot prices, melt value, dashboard | Next |
-| 3 | Valuation history, exports, backups | Planned |
+| 2 | Spot prices, melt value, dashboard | Done |
+| 3 | Valuation history, exports, backups | Next |
 | 4 | Sold-price comps (SoldComps, Numista, manual), quota manager | Planned |
 | 5 | Local AI identification and grading (optional) | Planned |
 
@@ -36,6 +36,23 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
   - You can split, merge or re-role a group.
   - Then save each group as a new item or add it to an existing one.
 - **Documents:** receipts, invoices, certificates and assay cards (PDF or image), linked to one or more items. They're served only to the signed-in owner.
+- **Spot prices:** gold, silver, platinum and palladium are fetched every 15 minutes (configurable) from [gold-api.com](https://gold-api.com), which needs no key. [Metals.Dev](https://metals.dev) is an optional backup with its own key.
+  - Polling pauses while the metals markets are closed (Friday 5 pm to Sunday 6 pm New York time), and a price older than the stale threshold is marked stale.
+  - A price is stored only if it parses as a positive number; a failed or malformed answer moves on to the next provider and is logged.
+  - The header shows the latest prices and when they were fetched.
+- **Melt value:** quantity × pure ounces × spot, per metal. Items without metal content have no melt value rather than zero.
+  - 36 reference compositions are built in: US 90%, 40% and 35% silver, pre-1933 US gold, and common bullion (Eagles, Maple Leafs, Krugerrands, Britannias, Philharmonics, Pandas and others). You can add your own.
+  - The item form suggests a composition from country, denomination, year, mint mark and title. When the details fit more than one (an 1881 dollar could be silver or gold), it lists them all.
+  - Junk silver and gold lots are valued by face value × the composition's pure ounces per $1, including a worn-90% figure.
+  - Each item has a valuation rule: the higher of melt and market (the default), melt, market or what you paid. Until market values arrive in Milestone 4, "higher of" means melt.
+- **Dashboard:** total melt value, what you paid (known and estimated, with a count of items with no cost), gain on items that have both, and pure ounces by metal.
+  - A chart of the spot price, or of what your holdings would have been worth, over a day to a year.
+  - Breakdowns by metal, type and storage location.
+- **Data providers (Settings):** each provider has a key field, a test button, an on/off switch and a monthly request cap.
+  - Keys are encrypted (AES-GCM) before they're stored and are never returned by the API; only the last four characters are shown.
+  - Usage is counted on every call and, where the provider reports it, synced from the provider's own figures daily and when you press Test. The provider's count wins.
+  - The usage meter turns amber at 80% of the cap and red at the cap, where calls stop until the period resets. Daily counts and the last calls are listed.
+  - Your SoldComps key can be saved, tested and monitored now (the test uses SoldComps' free usage endpoint). Comps searches arrive in Milestone 4.
 - **Operations:** migrations run on startup, and there's a health endpoint (`/api/v1/health`, plus `/api/v1/health/ready` when signed in). Logs are structured JSON with secrets redacted.
 
 The interactive API reference is at `http://<host>/api/v1/docs`.
@@ -125,7 +142,7 @@ Then inside the container:
 ```sh
 /opt/coinvault/app/deploy/lxc/update.sh
 ```
-It pulls the latest code, rebuilds, migrates the database and restarts the service. To roll back, run `pct rollback <vmid> <snapshot-name>` on the host.
+It pulls the latest code, rebuilds, migrates the database and restarts the service. It also adds `CV_ENCRYPTION_KEY` to the env file if it's missing (installs from before Milestone 2). To roll back, run `pct rollback <vmid> <snapshot-name>` on the host.
 
 Docker Compose, the GPU container for the AI service, encrypted backups and a Caddy HTTPS example arrive in later milestones.
 
@@ -141,6 +158,13 @@ All settings are environment variables prefixed `CV_`; see [`.env.example`](.env
 | `CV_MAX_PHOTO_MB` / `CV_MAX_DOCUMENT_MB` | 40 / 25 | Upload size limits |
 | `CV_MAX_FILES_PER_UPLOAD` | 200 | Files per bulk upload |
 | `CV_USE_X_ACCEL` | `false` | `true` when nginx serves protected files (the LXC install sets this) |
+| `CV_ENCRYPTION_KEY` | none | Encrypts provider API keys; the installer and updater generate it |
+| `CV_SCHEDULER_ENABLED` | `true` | Background price polling and the daily usage sync |
+| `CV_TIMEZONE` | `America/New_York` | Timezone for market hours |
+
+**Back up `CV_ENCRYPTION_KEY`** along with the database (it's in `/etc/coinvault/coinvault.env`). Without it, saved API keys can't be decrypted and you'd have to enter them again; nothing else is lost.
+
+Poll interval, stale threshold, weekend pause and currency are set in **Settings → Spot prices**.
 
 ## Development
 
@@ -163,12 +187,14 @@ npm run dev                              # http://localhost:5173
 ### Tests
 
 ```sh
-cd backend && pytest                                         # 45 API and unit tests on SQLite
+cd backend && pytest                                         # 75 API and unit tests on SQLite
 CV_TEST_DATABASE_URL=postgresql+psycopg://user:pass@host/db pytest   # same tests on PostgreSQL (wipes that db)
 
 cd frontend && npx playwright install chromium && npx playwright test
 # Playwright builds the frontend and starts a throwaway server. It runs the
-# add-item-with-photos and bulk-upload flows at desktop and phone sizes.
+# add-item, bulk-upload, composition, dashboard and provider-key flows at
+# desktop and phone sizes. Provider calls are mocked in the backend tests and
+# the e2e server doesn't poll, so no test reaches the internet.
 # Set PW_CHROME_PATH to use an installed Chrome instead of downloading one.
 ```
 
@@ -182,10 +208,13 @@ curl -H "Authorization: Bearer cv_xxxxxxxxxx_..." http://<host>/api/v1/items?typ
 ```
 Tokens can do only what their scopes allow. Writes with a token don't need the CSRF header; browser sessions do.
 
-## Known limits (Milestone 1)
+## Known limits
 
 - **Untuned photo-quality thresholds.** The blur, glare and resolution limits are generic starting values and haven't been tuned against your USB camera yet. Expect to adjust them once you've uploaded real photos.
 - **Resolution check uses the whole photo.** It looks at the photo's shorter side, not the coin's diameter, because auto-cropping to the coin isn't implemented yet.
 - **Discarded uploads keep their files.** A discarded group stays on disk so nothing you photographed is lost. There's no "empty the bin" action for them yet.
 - **Login throttling resets on restart.** The failed-login counter is kept in memory, which suits the single-process service.
-- **Sold-price data isn't available yet.** Melt values, spot prices, market values, exports and backups come in Milestones 2 and 3.
+- **No market values yet.** Current value is melt value until sold-price comps arrive in Milestone 4. Exports, valuation history and backups come in Milestone 3.
+- **Purchase prices aren't converted between currencies.** Changing the display currency changes spot prices and melt values, not what you paid.
+- **The holdings chart uses today's holdings.** It shows what your current metal would have been worth at past prices, not what you held on each date. Valuation history arrives in Milestone 3.
+- **Price history starts when you install.** The free spot sources give current prices only, so the chart fills in as the app polls.

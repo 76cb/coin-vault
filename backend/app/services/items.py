@@ -12,7 +12,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.deps import Principal, request_id_var
+from app.services import spot as spot_svc
+from app.services import valuation
 from app.models import (
+    User,
     AuditLog,
     BanknoteDetails,
     BarDetails,
@@ -38,6 +41,7 @@ from app.schemas import (
     ItemListEntry,
     ItemOut,
     ItemUpdate,
+    ItemValuesOut,
     MetalContentIn,
     MetalContentOut,
     PhotoOut,
@@ -199,17 +203,23 @@ def _apply_metal_content(db: Session, item: Item, rows: list[MetalContentIn]) ->
         fineness = row.fineness
         if gross is None and item.item_type == "bar" and item.bar and item.bar.weight_value:
             gross = item.bar.weight_value * UNIT_GRAMS[item.bar.weight_unit]
+        comp = None
         if row.composition_id is not None:
             comp = db.get(Composition, row.composition_id)
             if comp is None:
                 raise HTTPException(422, "Unknown composition")
+            if comp.per_face_unit:
+                raise HTTPException(422, "Per-face compositions apply to lots; pick it in the lot details instead")
         if row.pure_toz is not None:
             pure, source = row.pure_toz, "override"
+        elif comp is not None and gross is None and fineness is None:
+            # Standard composition: use the reference table's actual metal weight.
+            gross, fineness, pure, source = comp.gross_weight_g, comp.fineness, comp.pure_toz, "reference"
         else:
             pure, source = compute_pure_toz(gross, fineness), "computed"
         item.metal_content.append(
             ItemMetalContent(
-                metal=row.metal,
+                metal=comp.metal if comp is not None and source == "reference" else row.metal,
                 gross_weight_g=gross,
                 fineness=fineness,
                 pure_toz=pure,
@@ -410,14 +420,6 @@ def _grade_label(item: Item) -> str | None:
     return " ".join(parts) or None
 
 
-def pure_by_metal(item: Item) -> dict[str, Decimal]:
-    out: dict[str, Decimal] = {}
-    for m in item.metal_content:
-        if m.pure_toz is not None:
-            out[m.metal] = out.get(m.metal, Decimal(0)) + m.pure_toz
-    return out
-
-
 def _photo_out(p: Photo) -> PhotoOut:
     return PhotoOut(
         id=p.id,
@@ -444,7 +446,32 @@ def cover_thumb(item: Item) -> str | None:
     return photo_urls(pid)["thumb"] if pid else None
 
 
-def item_out(db: Session, item: Item) -> ItemOut:
+def values_out(db: Session, item: Item, currency: str, spot: dict) -> ItemValuesOut:
+    v = valuation.item_values(db, item, spot)
+    return ItemValuesOut(
+        currency=currency,
+        melt=v.melt,
+        melt_by_metal=v.melt_by_metal,
+        melt_missing_spot=v.melt_missing_spot,
+        market=v.market,
+        cost=v.cost,
+        current=v.current,
+        gain=v.gain,
+        rule=v.rule,
+        rule_applied=v.rule_applied,
+        pure_toz_total=v.pure_toz_total,
+    )
+
+
+def owner_currency(db: Session, owner_id: int) -> str:
+    user = db.get(User, owner_id)
+    return user.base_currency if user else "USD"
+
+
+def item_out(db: Session, item: Item, spot: dict | None = None) -> ItemOut:
+    currency = owner_currency(db, item.owner_id)
+    if spot is None:
+        spot = spot_svc.spot_map(db, currency)
     docs = db.scalars(
         select(Document)
         .join(document_links, document_links.c.document_id == Document.id)
@@ -474,7 +501,8 @@ def item_out(db: Session, item: Item) -> ItemOut:
         condition=ConditionIn.model_validate(item.condition) if item.condition else None,
         details=_details_dict(item),
         metal_content=[MetalContentOut.model_validate(m) for m in item.metal_content],
-        pure_toz_per_unit=pure_by_metal(item),
+        pure_toz_per_unit=valuation.pure_per_unit(db, item),
+        values=values_out(db, item, currency, spot),
         tags=[t.name for t in item.tags],
         cover_photo_id=item.cover_photo_id,
         cover_thumb_url=cover_thumb(item),
@@ -490,7 +518,10 @@ def item_out(db: Session, item: Item) -> ItemOut:
     )
 
 
-def list_entry(db: Session, item: Item, paths: dict[int, str | None]) -> ItemListEntry:
+def list_entry(
+    db: Session, item: Item, paths: dict[int, str | None], spot: dict | None = None, currency: str = "USD"
+) -> ItemListEntry:
+    v = valuation.item_values(db, item, spot or {})
     coin = item.coin if item.item_type in ("coin", "bullion") else None
     country = coin.country if coin else (item.banknote.country if item.banknote else None)
     return ItemListEntry(
@@ -508,6 +539,9 @@ def list_entry(db: Session, item: Item, paths: dict[int, str | None]) -> ItemLis
         tags=[t.name for t in item.tags],
         cover_thumb_url=cover_thumb(item),
         photo_count=len(item.photos),
+        melt=v.melt,
+        current=v.current,
+        currency=currency,
         updated_at=item.updated_at,
         deleted_at=item.deleted_at,
     )

@@ -34,6 +34,7 @@ from app.schemas import (
     SaleIn,
 )
 from app.services import items as svc
+from app.services import spot as spot_svc
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -126,6 +127,8 @@ def list_items(
             selectinload(Item.coin),
             selectinload(Item.banknote),
             selectinload(Item.condition),
+            selectinload(Item.metal_content),
+            selectinload(Item.lot),
         )
     )
     rows = db.scalars(stmt).unique().all()
@@ -133,8 +136,10 @@ def list_items(
         loc.id: svc.location_path(db, loc.id)
         for loc in db.scalars(select(Location).where(Location.owner_id == principal.owner_id))
     }
+    currency = principal.user.base_currency
+    spot = spot_svc.spot_map(db, currency)
     return ItemPage(
-        items=[svc.list_entry(db, it, paths) for it in rows], total=total, page=page, page_size=page_size
+        items=[svc.list_entry(db, it, paths, spot, currency) for it in rows], total=total, page=page, page_size=page_size
     )
 
 

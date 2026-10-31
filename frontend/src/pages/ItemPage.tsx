@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { api, Item, ITEM_TYPE_LABELS, METAL_LABELS, money, ozt, ROLE_LABELS, STATUS_LABELS } from "../api";
+import { api, Item, ITEM_TYPE_LABELS, Metal, METAL_LABELS, money, ozt, ROLE_LABELS, RULE_LABELS, STATUS_LABELS } from "../api";
 import Documents from "../components/Documents";
 import ItemForm from "../components/ItemForm";
 import PhotoManager from "../components/PhotoManager";
@@ -123,6 +123,7 @@ export default function ItemPage() {
             />
           ) : (
             <>
+              {it.values && it.status !== "sold" && <ValuePanel item={it} />}
               <dl className="facts">
                 <dt>Type</dt>
                 <dd>{ITEM_TYPE_LABELS[it.item_type]}{it.quantity > 1 ? `, ${it.quantity} pieces` : ""}</dd>
@@ -150,7 +151,10 @@ export default function ItemPage() {
                         <td>{METAL_LABELS[m.metal]}</td>
                         <td className="tabular">{m.gross_weight_g ? `${Number(m.gross_weight_g)} g` : "—"}</td>
                         <td className="tabular">{m.fineness ? Number(m.fineness) : "—"}</td>
-                        <td className="tabular">{ozt(m.pure_toz)}{m.source === "override" ? " (override)" : ""}</td>
+                        <td className="tabular">
+                          {ozt(m.pure_toz)}
+                          {m.source === "override" ? " (override)" : m.source === "reference" ? " (reference)" : ""}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -218,6 +222,43 @@ export default function ItemPage() {
         </div>
       )}
     </>
+  );
+}
+
+function ValuePanel({ item }: { item: Item }) {
+  const v = item.values!;
+  const cur = v.currency;
+  const missing = v.melt_missing_spot.map((m) => METAL_LABELS[m as Metal] ?? m);
+  const per = item.quantity > 1 && v.current ? Number(v.current) / item.quantity : null;
+  let ruleText: string;
+  if (v.rule_applied === "none") ruleText = "No value yet: add the metal content, or set a cost.";
+  else if (v.rule === "max" && v.market === null) ruleText = "Using melt value. This item is valued at the higher of melt and market value, and there's no market value yet.";
+  else if (v.rule === "max") ruleText = `Using ${RULE_LABELS[v.rule_applied] ?? v.rule_applied}, the higher of melt and market value.`;
+  else ruleText = `Valued at ${RULE_LABELS[v.rule] ?? v.rule}.`;
+  return (
+    <section className="value-panel" aria-label="Value">
+      <div className="value-main">
+        <span className="kpi-label">Current value</span>
+        <span className="value-big">{v.current ? money(v.current, cur) : "—"}</span>
+        {per !== null && <span className="hint">{money(String(per), cur)} each</span>}
+      </div>
+      <dl className="facts">
+        <dt>Melt</dt>
+        <dd className="tabular">{money(v.melt, cur)}</dd>
+        <dt>Market</dt>
+        <dd className="hint">Not available yet</dd>
+        <dt>Paid</dt>
+        <dd className="tabular">{v.cost ? money(v.cost, cur) : "Unknown"}</dd>
+        {v.gain && (
+          <>
+            <dt>Gain</dt>
+            <dd className={`tabular ${Number(v.gain) < 0 ? "is-loss" : ""}`}>{Number(v.gain) > 0 ? "+" : ""}{money(v.gain, cur)}</dd>
+          </>
+        )}
+      </dl>
+      <p className="hint">{ruleText}</p>
+      {missing.length > 0 && <p className="hint">No spot price yet for {missing.join(" and ")}, so that part of the melt value is missing.</p>}
+    </section>
   );
 }
 

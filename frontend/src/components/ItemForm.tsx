@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 
-import { api, CostStatus, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, STATUS_LABELS } from "../api";
+import { api, Composition, CostStatus, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, STATUS_LABELS } from "../api";
 
 type Str = string;
 interface MetalRow {
@@ -9,6 +9,7 @@ interface MetalRow {
   gross_weight_g: Str;
   fineness: Str;
   pure_toz: Str; // empty = computed
+  composition_id: Str; // empty = none
 }
 interface FormState {
   item_type: ItemType;
@@ -36,6 +37,7 @@ interface FormState {
   designations: Str;
   details_reason: Str;
   metals: MetalRow[];
+  valuation_rule: Str;
 }
 
 type FieldDef = { key: string; label: string; type?: "number" | "text" | "checkbox" | "select" | "textarea"; options?: string[]; hint?: string };
@@ -134,7 +136,11 @@ function fromItem(item?: Item, defaults?: Partial<FormState>): FormState {
       gross_weight_g: s(m.gross_weight_g),
       fineness: s(m.fineness),
       pure_toz: m.source === "override" ? s(m.pure_toz) : "",
+      composition_id: s(m.composition_id),
+      // a reference row shows the reference values as placeholders, not as typed values
+      ...(m.source === "reference" ? { gross_weight_g: "", fineness: "" } : {}),
     })),
+    valuation_rule: item?.valuation_rule ?? "max",
     ...defaults,
   };
 }
@@ -151,6 +157,7 @@ export function toPayload(f: FormState): Record<string, unknown> {
     else if (fd.key === "face_currency") details[fd.key] = (v as string)?.trim() || "USD";
     else details[fd.key] = nul(String(v ?? ""));
   }
+  if (f.item_type === "lot") details.composition_id = f.details.composition_id ? Number(f.details.composition_id) : null;
   if (f.item_type === "other") {
     const attrs: Record<string, string> = {};
     String(f.details.attributes ?? "")
@@ -200,12 +207,19 @@ export function toPayload(f: FormState): Record<string, unknown> {
       gross_weight_g: nul(m.gross_weight_g),
       fineness: nul(m.fineness),
       pure_toz: nul(m.pure_toz),
+      composition_id: m.composition_id ? Number(m.composition_id) : null,
     })),
+    valuation_rule: f.valuation_rule || "max",
   };
 }
 
-function previewPure(m: MetalRow): string {
+function fmtToz(v: string | number): string {
+  return Number(v).toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function previewPure(m: MetalRow, comp?: Composition): string {
   if (m.pure_toz) return `${m.pure_toz} ozt (your override)`;
+  if (comp && !m.gross_weight_g && !m.fineness) return `${fmtToz(comp.pure_toz)} ozt pure, from the reference: ${comp.label}`;
   const g = Number(m.gross_weight_g);
   const f = Number(m.fineness);
   if (!m.gross_weight_g || !m.fineness || !g || !f) return "";
@@ -230,6 +244,38 @@ export default function ItemForm({
   const [busy, setBusy] = useState(false);
   const locations = useQuery({ queryKey: ["locations"], queryFn: api.locations });
   const fields = DETAIL_FIELDS[f.item_type];
+  const comps = useQuery({ queryKey: ["compositions"], queryFn: () => api.compositions(), staleTime: 5 * 60_000 });
+  const compById = useMemo(() => new Map((comps.data ?? []).map((c) => [String(c.id), c])), [comps.data]);
+  const matchParams = useMemo(() => {
+    if (f.item_type !== "coin" && f.item_type !== "bullion") return null;
+    const p: Record<string, string> = {};
+    for (const k of ["country", "denomination", "year", "mint_mark", "series"]) {
+      const v = String(f.details[k] ?? "").trim();
+      if (v) p[k] = v;
+    }
+    if (f.item_type === "bullion" && f.details.product_line) p.series = String(f.details.product_line);
+    if (!p.denomination && !p.series) return null;
+    // Words in the title ("Morgan", "Walking Liberty") help tell apart coins of the same denomination and year.
+    if (f.title.trim()) p.series = [p.series, f.title.trim()].filter(Boolean).join(" ");
+    return p;
+  }, [f.item_type, f.details, f.title]);
+  const matches = useQuery({
+    queryKey: ["composition-match", matchParams],
+    queryFn: () => api.matchCompositions(matchParams!),
+    enabled: matchParams !== null,
+    staleTime: 60_000,
+  });
+  // Every match sharing the top score: when the details fit several equally, offer them all rather than guess.
+  // Nothing is offered once one of them is in use.
+  const top = matches.data?.length ? matches.data.filter((c) => c.score === matches.data![0].score) : [];
+  const suggestions = top.some((c) => f.metals.some((m) => m.composition_id === String(c.id))) ? [] : top.slice(0, 3);
+  const applyComposition = (c: Composition) =>
+    setF((p) => {
+      const blank = { gross_weight_g: "", fineness: "", pure_toz: "", composition_id: String(c.id), metal: c.metal };
+      const i = p.metals.findIndex((m) => m.metal === c.metal);
+      const metals = i >= 0 ? p.metals.map((m, j) => (j === i ? blank : m)) : [...p.metals, blank];
+      return { ...p, metals };
+    });
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v }));
   const setDetail = (k: string, v: string | boolean) => setF((p) => ({ ...p, details: { ...p.details, [k]: v } }));
@@ -290,9 +336,59 @@ export default function ItemForm({
 
       <fieldset>
         <legend>Metal content (per piece)</legend>
-        {f.metals.length === 0 && <p className="muted">Add the metal so melt value can be worked out from spot price.</p>}
-        {f.metals.map((m, i) => (
+        {f.metals.length === 0 && f.item_type !== "lot" && <p className="muted">Add the metal so melt value can be worked out from spot price.</p>}
+        {f.item_type === "lot" && (
+          <label className="lot-comp">
+            Content per {String(f.details.face_currency || "USD")} 1 of face value
+            <select value={String(f.details.composition_id ?? "")} onChange={(e) => setDetail("composition_id", e.target.value)}>
+              <option value="">Not set</option>
+              {comps.data?.filter((c) => c.per_face_unit).map((c) => (
+                <option key={c.id} value={c.id}>{c.label} ({fmtToz(c.pure_toz)} ozt per 1)</option>
+              ))}
+            </select>
+            <span className="hint">
+              {lotPreview(f, compById) ?? "Pick the kind of junk silver or gold and the face value above; melt value follows from it. Rows below override it."}
+            </span>
+          </label>
+        )}
+        {suggestions.length > 0 && (
+          <div className="suggest" role="status">
+            <p>{suggestions.length === 1 ? "Looks like:" : "From the details so far, it could be any of these:"}</p>
+            <ul>
+              {suggestions.map((c) => (
+                <li key={c.id}>
+                  <span>
+                    <strong>{c.label}</strong>: {fmtToz(c.pure_toz)} ozt {METAL_LABELS[c.metal].toLowerCase()} per piece.
+                  </span>
+                  <button type="button" className="small" onClick={() => applyComposition(c)}>Use these figures</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {f.metals.map((m, i) => {
+          const comp = compById.get(m.composition_id);
+          return (
           <div className="metal-row" key={i}>
+            <label className="metal-ref">
+              Reference
+              <select
+                value={m.composition_id}
+                onChange={(e) => {
+                  const c = compById.get(e.target.value);
+                  setMetal(i, c ? { composition_id: e.target.value, metal: c.metal, gross_weight_g: "", fineness: "", pure_toz: "" } : { composition_id: "" });
+                }}
+              >
+                <option value="">None: I'll enter the weights</option>
+                {(Object.keys(METAL_LABELS) as Metal[]).map((metal) => (
+                  <optgroup key={metal} label={METAL_LABELS[metal]}>
+                    {comps.data?.filter((c) => !c.per_face_unit && c.metal === metal).map((c) => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
             <label>
               Metal
               <select value={m.metal} onChange={(e) => setMetal(i, { metal: e.target.value as Metal })}>
@@ -303,11 +399,11 @@ export default function ItemForm({
             </label>
             <label>
               Gross weight (g)
-              <input inputMode="decimal" value={m.gross_weight_g} onChange={(e) => setMetal(i, { gross_weight_g: e.target.value })} placeholder={f.item_type === "bar" ? "from bar weight" : ""} />
+              <input inputMode="decimal" value={m.gross_weight_g} onChange={(e) => setMetal(i, { gross_weight_g: e.target.value })} placeholder={comp?.gross_weight_g ? fmtToz(comp.gross_weight_g) : f.item_type === "bar" ? "from bar weight" : ""} />
             </label>
             <label>
               Fineness
-              <input inputMode="decimal" value={m.fineness} onChange={(e) => setMetal(i, { fineness: e.target.value })} placeholder="0.900" />
+              <input inputMode="decimal" value={m.fineness} onChange={(e) => setMetal(i, { fineness: e.target.value })} placeholder={comp?.fineness ? String(Number(comp.fineness)) : "0.900"} />
             </label>
             <label>
               Pure ozt override
@@ -316,10 +412,11 @@ export default function ItemForm({
             <button type="button" className="ghost small" onClick={() => setF((p) => ({ ...p, metals: p.metals.filter((_, j) => j !== i) }))}>
               Remove
             </button>
-            <span className="hint metal-preview">{previewPure(m)}</span>
+            <span className="hint metal-preview">{previewPure(m, comp)}</span>
           </div>
-        ))}
-        <button type="button" className="ghost small" onClick={() => setF((p) => ({ ...p, metals: [...p.metals, { metal: "Ag", gross_weight_g: "", fineness: "", pure_toz: "" }] }))}>
+          );
+        })}
+        <button type="button" className="ghost small" onClick={() => setF((p) => ({ ...p, metals: [...p.metals, { metal: "Ag", gross_weight_g: "", fineness: "", pure_toz: "", composition_id: "" }] }))}>
           Add metal
         </button>
       </fieldset>
@@ -393,6 +490,15 @@ export default function ItemForm({
             </select>
           </label>
           <label>
+            Value it at
+            <select value={f.valuation_rule} onChange={(e) => set("valuation_rule", e.target.value)}>
+              <option value="max">Higher of melt and market (default)</option>
+              <option value="melt">Melt value</option>
+              <option value="market">Market value</option>
+              <option value="cost">What I paid</option>
+            </select>
+          </label>
+          <label>
             Acquired
             <input type="date" value={f.acquired_date} onChange={(e) => set("acquired_date", e.target.value)} />
           </label>
@@ -462,6 +568,13 @@ export default function ItemForm({
       </div>
     </form>
   );
+}
+
+function lotPreview(f: FormState, compById: Map<string, Composition>): string | null {
+  const c = compById.get(String(f.details.composition_id ?? ""));
+  const face = Number(f.details.face_value);
+  if (!c || !face) return null;
+  return `${face.toLocaleString()} face × ${fmtToz(c.pure_toz)} = ${fmtToz(face * Number(c.pure_toz))} ozt ${METAL_LABELS[c.metal].toLowerCase()} pure.`;
 }
 
 function DetailInput({ def, value, onChange }: { def: FieldDef; value: string | boolean | undefined; onChange: (v: string | boolean) => void }) {

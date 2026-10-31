@@ -13,6 +13,20 @@ ENV_FILE=/etc/coinvault/coinvault.env
 # Run a command as the coinvault user with the app's environment loaded.
 as_app() { sudo -u coinvault bash -c 'set -a; . "$0"; set +a; exec "$@"' "$ENV_FILE" "$@"; }
 
+# Provider API keys are encrypted with this; create it once and never replace it.
+ensure_encryption_key() {
+  if ! grep -q '^CV_ENCRYPTION_KEY=..*' "$ENV_FILE"; then
+    local key
+    key="$(openssl rand -base64 32)"
+    if grep -q '^CV_ENCRYPTION_KEY=' "$ENV_FILE"; then
+      sed -i "s#^CV_ENCRYPTION_KEY=.*#CV_ENCRYPTION_KEY=$key#" "$ENV_FILE"
+    else
+      printf '\n# Encrypts provider API keys in the database. Keep it with your backups.\nCV_ENCRYPTION_KEY=%s\n' "$key" >> "$ENV_FILE"
+    fi
+    echo "Added CV_ENCRYPTION_KEY to $ENV_FILE."
+  fi
+}
+
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
 cd "$APP_DIR"
 
@@ -23,6 +37,8 @@ if [[ "${1:-}" != "--no-pull" ]]; then
   git merge --ff-only "@{u}"
   echo "    $BEFORE -> $(git rev-parse HEAD)"
 fi
+
+ensure_encryption_key
 
 echo "==> Updating the backend"
 "$VENV/bin/pip" install -q --upgrade -e "$APP_DIR/backend"

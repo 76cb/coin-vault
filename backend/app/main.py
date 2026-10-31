@@ -18,7 +18,8 @@ from app.db import get_engine
 from app.deps import request_id_var
 from app.logging_setup import log, setup_logging
 from app.migrate import upgrade_to_head
-from app.routers import auth, documents, health, items, photos, reference, uploads
+from app import scheduler
+from app.routers import auth, compositions, documents, health, items, photos, prices, reference, settings, uploads
 from app.services import storage
 
 API_PREFIX = "/api/v1"
@@ -31,8 +32,10 @@ async def lifespan(app: FastAPI):
     if s.run_migrations_on_startup:
         upgrade_to_head(get_engine())
         log.info("migrations_applied")
+    scheduler.start()
     log.info("startup", version=__version__, media_root=str(storage.media_root()))
     yield
+    scheduler.stop()
 
 
 def create_app() -> FastAPI:
@@ -76,7 +79,10 @@ def create_app() -> FastAPI:
         structlog.contextvars.unbind_contextvars("request_id")
         return response
 
-    for r in (health.router, auth.router, items.router, reference.router, photos.router, documents.router, uploads.router):
+    for r in (
+        health.router, auth.router, items.router, reference.router, photos.router, documents.router, uploads.router,
+        prices.router, compositions.router, settings.router,
+    ):
         app.include_router(r, prefix=API_PREFIX)
 
     dist = s.frontend_dist

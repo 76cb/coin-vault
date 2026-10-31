@@ -42,6 +42,16 @@ class Settings(BaseSettings):
     # Built frontend (served by nginx in production; FastAPI serves it in dev/compose if set)
     frontend_dist: Path | None = None
 
+    # Base64 of 32 random bytes; encrypts provider API keys at rest. The installer generates it.
+    # Losing it means re-entering API keys in Settings; nothing else is affected.
+    encryption_key: str | None = None
+
+    # Background jobs (spot polling). Off in tests.
+    scheduler_enabled: bool = True
+    # Timezone used for market hours and the daily jobs.
+    timezone: str = "America/New_York"
+    http_timeout_seconds: float = 15.0
+
     # Duplicate detection threshold (pHash Hamming distance)
     phash_duplicate_distance: int = Field(default=6, ge=0, le=64)
 

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { api, ApiToken } from "../api";
+import { PriceSettings, Providers } from "../components/Providers";
 
 const SCOPES: [string, string][] = [
   ["items:read", "Read items"],
@@ -17,6 +18,8 @@ export default function Settings({ user }: { user: string }) {
         <h1>Settings</h1>
       </div>
       <div className="settings">
+        <PriceSettings />
+        <Providers />
         <Locations />
         <Tags />
         <Tokens />

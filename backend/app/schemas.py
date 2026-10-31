@@ -206,6 +206,20 @@ class DocumentSummary(_Base):
     url: str
 
 
+class ItemValuesOut(_Base):
+    currency: str
+    melt: Decimal | None
+    melt_by_metal: dict[str, Decimal]
+    melt_missing_spot: list[str]
+    market: Decimal | None
+    cost: Decimal | None
+    current: Decimal | None
+    gain: Decimal | None
+    rule: str
+    rule_applied: str
+    pure_toz_total: dict[str, Decimal]
+
+
 class ItemOut(_Base):
     id: int
     item_type: str
@@ -230,6 +244,7 @@ class ItemOut(_Base):
     details: dict[str, Any]
     metal_content: list[MetalContentOut]
     pure_toz_per_unit: dict[str, Decimal]
+    values: ItemValuesOut
     tags: list[str]
     cover_photo_id: int | None
     cover_thumb_url: str | None
@@ -257,6 +272,9 @@ class ItemListEntry(_Base):
     cover_thumb_url: str | None
     photo_count: int
     updated_at: dt.datetime
+    melt: Decimal | None = None
+    current: Decimal | None = None
+    currency: str = "USD"
     deleted_at: dt.datetime | None
 
 

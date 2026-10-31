@@ -3,7 +3,9 @@ import { useEffect } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
 import { api, setCsrf } from "./api";
+import SpotTicker from "./components/SpotTicker";
 import Collection from "./pages/Collection";
+import Dashboard from "./pages/Dashboard";
 import ItemPage from "./pages/ItemPage";
 import Login from "./pages/Login";
 import NewItem from "./pages/NewItem";
@@ -48,14 +50,17 @@ export default function App() {
         </NavLink>
         <nav className="mainnav">
           <NavLink to="/" end>Collection</NavLink>
+          <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/upload">Upload photos</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
+        <SpotTicker />
         <button className="signout" onClick={signOut}>Sign out</button>
       </header>
       <main className="page">
         <Routes>
           <Route path="/" element={<Collection />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/items/new" element={<NewItem />} />
           <Route path="/items/:id" element={<ItemPage />} />
           <Route path="/upload" element={<Upload />} />

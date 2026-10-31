@@ -83,6 +83,21 @@ export interface MetalContent {
   fineness: string | null;
   pure_toz: string | null;
   source?: "reference" | "computed" | "override";
+  composition_id?: number | null;
+}
+
+export interface ItemValues {
+  currency: string;
+  melt: string | null;
+  melt_by_metal: Record<string, string>;
+  melt_missing_spot: string[];
+  market: string | null;
+  cost: string | null;
+  current: string | null;
+  gain: string | null;
+  rule: string;
+  rule_applied: string;
+  pure_toz_total: Record<string, string>;
 }
 
 export interface DocSummary {
@@ -123,6 +138,7 @@ export interface Item {
   cover_thumb_url: string | null;
   photos: Photo[];
   documents: DocSummary[];
+  values: ItemValues | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -144,6 +160,9 @@ export interface ItemListEntry {
   tags: string[];
   cover_thumb_url: string | null;
   photo_count: number;
+  melt: string | null;
+  current: string | null;
+  currency: string;
   updated_at: string;
   deleted_at: string | null;
 }
@@ -214,6 +233,137 @@ export interface DocumentFull extends DocSummary {
   bytes: number;
   original_filename: string | null;
   item_ids: number[];
+}
+
+export interface Composition {
+  id: number;
+  key: string;
+  label: string;
+  country: string | null;
+  denomination: string | null;
+  year_from: number | null;
+  year_to: number | null;
+  mint_marks: string[] | null;
+  metal: Metal;
+  fineness: string | null;
+  gross_weight_g: string | null;
+  pure_toz: string;
+  per_face_unit: boolean;
+  citation: string | null;
+  custom: boolean;
+}
+
+export interface Spot {
+  metal: Metal;
+  label: string;
+  price: string | null;
+  source: string | null;
+  fetched_at: string | null;
+  source_timestamp: string | null;
+  stale: boolean;
+}
+export interface SpotLatest {
+  currency: string;
+  market_open: boolean;
+  stale_after_minutes: number;
+  next_poll: string | null;
+  metals: Spot[];
+}
+export interface SpotHistory {
+  metal: Metal;
+  currency: string;
+  interval: "raw" | "hour" | "day";
+  holdings_toz: string;
+  points: { t: string; price: string }[];
+}
+export interface Bucket {
+  key: string;
+  label: string;
+  count: number;
+  pieces: number;
+  pure_toz: string;
+  melt: string;
+  cost: string;
+  current: string;
+}
+export interface Summary {
+  currency: string;
+  spot: SpotLatest;
+  totals: {
+    item_count: number;
+    pieces: number;
+    melt: string;
+    cost: string;
+    cost_estimated: string;
+    current: string;
+    gain: string;
+    gain_items: number;
+    cost_unknown_items: number;
+    estimated_cost_items: number;
+    no_value_items: number;
+  };
+  pure_toz: Record<string, string>;
+  by_metal: Bucket[];
+  by_type: Bucket[];
+  by_location: Bucket[];
+  market_values_available: boolean;
+}
+
+export interface AppSettings {
+  base_currency: string;
+  currencies: string[];
+  spot_poll_minutes: number;
+  spot_stale_minutes: number;
+  spot_pause_weekends: boolean;
+  encryption_ready: boolean;
+  scheduler_running: boolean;
+}
+export interface ProviderUsage {
+  used: number;
+  cap: number | null;
+  provider_limit: number | null;
+  provider_used: number | null;
+  remaining: number | null;
+  period_start: string;
+  period_end: string;
+  synced_at: string | null;
+}
+export interface Provider {
+  key: string;
+  label: string;
+  kind: "spot" | "comps" | string;
+  note: string;
+  docs_url: string;
+  key_url: string | null;
+  available_from: number;
+  needs_key: boolean;
+  key_set: boolean;
+  key_last4: string | null;
+  enabled: boolean;
+  priority: number;
+  quota_cap: number | null;
+  quota_period: string | null;
+  usage: ProviderUsage | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
+  consecutive_failures: number;
+}
+export interface ProviderCall {
+  at: string;
+  endpoint: string;
+  context: string | null;
+  status: string;
+  http_status: number | null;
+  cost: number;
+  duration_ms: number | null;
+  detail: string | null;
+}
+export interface DayCount {
+  date: string;
+  requests: number;
+  calls: number;
+  errors: number;
 }
 
 // --- Transport -----------------------------------------------------------------------
@@ -336,6 +486,26 @@ export const api = {
   tags: () => request<Tag[]>("GET", `${A}/tags`),
   renameTag: (id: number, name: string) => request<Tag>("PATCH", `${A}/tags/${id}`, { name }),
   deleteTag: (id: number) => request<void>("DELETE", `${A}/tags/${id}`),
+
+  spotLatest: () => request<SpotLatest>("GET", `${A}/prices/spot/latest`),
+  refreshSpot: () => request<{ ok: boolean; source: string | null; errors: string[]; latest: SpotLatest }>("POST", `${A}/prices/spot/refresh`),
+  spotHistory: (metal: Metal, days: number) => request<SpotHistory>("GET", `${A}/prices/spot/history?metal=${metal}&days=${days}`),
+  summary: () => request<Summary>("GET", `${A}/portfolio/summary`),
+
+  compositions: (params: Record<string, string> = {}) => request<Composition[]>("GET", `${A}/compositions?${new URLSearchParams(params)}`),
+  matchCompositions: (params: Record<string, string>) =>
+    request<(Composition & { score: number })[]>("GET", `${A}/compositions/match?${new URLSearchParams(params)}`),
+  createComposition: (body: unknown) => request<Composition>("POST", `${A}/compositions`, body),
+  deleteComposition: (id: number) => request<void>("DELETE", `${A}/compositions/${id}`),
+
+  settings: () => request<AppSettings>("GET", `${A}/settings`),
+  patchSettings: (body: Partial<AppSettings>) => request<AppSettings>("PATCH", `${A}/settings`, body),
+  providers: () => request<Provider[]>("GET", `${A}/settings/providers`),
+  updateProvider: (key: string, body: { api_key?: string | null; enabled?: boolean; priority?: number; quota_cap?: number }) =>
+    request<Provider>("PUT", `${A}/settings/providers/${key}`, body),
+  testProvider: (key: string) => request<{ ok: boolean; message: string; provider: Provider }>("POST", `${A}/settings/providers/${key}/test`),
+  providerUsage: (key: string) => request<{ provider: Provider; days: DayCount[] }>("GET", `${A}/settings/providers/${key}/usage`),
+  providerCalls: (key: string, limit = 20) => request<ProviderCall[]>("GET", `${A}/settings/providers/${key}/calls?limit=${limit}`),
 };
 
 export function money(v: string | null | undefined, currency = "USD"): string {
@@ -343,6 +513,31 @@ export function money(v: string | null | undefined, currency = "USD"): string {
   const n = Number(v);
   return Number.isFinite(n) ? n.toLocaleString(undefined, { style: "currency", currency }) : v;
 }
+
+export function compactMoney(v: string | number | null | undefined, currency = "USD"): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return n.toLocaleString(undefined, { style: "currency", currency, notation: Math.abs(n) >= 100000 ? "compact" : "standard", minimumFractionDigits: Math.abs(n) >= 100 ? 0 : 2, maximumFractionDigits: Math.abs(n) >= 100 ? 0 : 2 });
+}
+
+/** "3 minutes ago" style, for timestamps in the past. */
+export function ago(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "never";
+  const s = Math.round((now - new Date(iso).getTime()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  if (Math.abs(s) < 60) return "just now";
+  if (Math.abs(s) < 3600) return rtf.format(-Math.round(s / 60), "minute");
+  if (Math.abs(s) < 86400) return rtf.format(-Math.round(s / 3600), "hour");
+  return rtf.format(-Math.round(s / 86400), "day");
+}
+
+export const RULE_LABELS: Record<string, string> = {
+  max: "the higher of melt and market value",
+  melt: "melt value",
+  market: "market value",
+  cost: "what you paid",
+};
 
 export function ozt(v: string | null | undefined): string {
   if (!v) return "—";
