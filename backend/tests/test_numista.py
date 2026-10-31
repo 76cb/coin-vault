@@ -128,3 +128,36 @@ def test_grade_in_text():
 
     assert grade_in_text("2021 $1 Silver Eagle T1 Last Day Prod PCGS MS70 Legends of Life") == ("MS70", 70)
     assert grade_in_text("1921 Morgan dollar") is None and grade_in_text("VF-30") == ("VF30", 30)
+
+
+def test_raw_estimate_does_not_override_a_slabbed_coins_value(api, fake):
+    api.put("/api/v1/settings/providers/numista", json={"api_key": "numista-key"})
+    item = api.post("/api/v1/items", json={
+        "item_type": "coin", "title": "1858 Canada 5 cents PCGS VF30", "details": {"year": 1858, "numista_id": 420},
+        "condition": {"grading": "slabbed", "grading_service": "PCGS", "grade_text": "VF30", "sheldon_grade": 30},
+        "valuation_rule": "market",
+    }).json()
+    api.post(f"/api/v1/items/{item['id']}/valuations", json={"kind": "manual", "value_each": "49.99", "source": "eBay"})
+    est = api.post(f"/api/v1/items/{item['id']}/numista/estimate").json()  # newer, but a raw-coin estimate
+    vals = api.get(f"/api/v1/items/{item['id']}/valuations").json()
+    in_use = [v for v in vals if v["in_use"]]
+    assert len(in_use) == 1 and Decimal(in_use[0]["value_each"]) == Decimal("49.99")
+    assert Decimal(api.get(f"/api/v1/items/{item['id']}").json()["values"]["current"]) == Decimal("49.99")
+
+    # the owner can choose the estimate anyway, and go back to the automatic choice
+    vals = api.put(f"/api/v1/valuations/{est['id']}/use", json={"use": True}).json()
+    assert next(v for v in vals if v["in_use"])["id"] == est["id"]
+    assert Decimal(api.get(f"/api/v1/items/{item['id']}").json()["values"]["current"]) == Decimal("30")
+    vals = api.put(f"/api/v1/valuations/{est['id']}/use", json={"use": False}).json()
+    assert Decimal(next(v for v in vals if v["in_use"])["value_each"]) == Decimal("49.99")
+
+
+def test_raw_coin_uses_the_newest_value(api, fake):
+    api.put("/api/v1/settings/providers/numista", json={"api_key": "numista-key"})
+    item = api.post("/api/v1/items", json={
+        "item_type": "coin", "title": "raw", "details": {"year": 1858, "numista_id": 420},
+        "condition": {"grading": "raw", "sheldon_grade": 30}, "valuation_rule": "market",
+    }).json()
+    api.post(f"/api/v1/items/{item['id']}/valuations", json={"kind": "manual", "value_each": "49.99", "as_of": "2026-10-01"})
+    api.post(f"/api/v1/items/{item['id']}/numista/estimate")
+    assert Decimal(api.get(f"/api/v1/items/{item['id']}").json()["values"]["current"]) == Decimal("30")

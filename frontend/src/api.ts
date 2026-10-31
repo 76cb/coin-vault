@@ -404,6 +404,8 @@ export interface CompsSearch {
 export interface Valuation {
   id: number;
   item_id: number;
+  pinned: boolean; // the owner chose this one
+  in_use: boolean; // the item's market value comes from it
   kind: "manual" | "comps";
   value_each: string;
   currency: string;
@@ -677,6 +679,7 @@ export const api = {
 
   valuations: (itemId: number) => request<Valuation[]>("GET", `${A}/items/${itemId}/valuations`),
   addValuation: (itemId: number, body: unknown) => request<Valuation>("POST", `${A}/items/${itemId}/valuations`, body),
+  useValuation: (id: number, use: boolean) => request<Valuation[]>("PUT", `${A}/valuations/${id}/use`, { use }),
   deleteValuation: (id: number) => request<void>("DELETE", `${A}/valuations/${id}`),
   compsKeyword: (itemId: number) => request<{ keyword: string }>("GET", `${A}/items/${itemId}/comps/keyword`),
   searchComps: (itemId: number, body: { keyword: string; sold_within_days: number | null; condition: string; exact_match: boolean }) =>

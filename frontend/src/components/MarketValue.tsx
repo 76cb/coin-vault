@@ -34,6 +34,7 @@ export default function MarketValue({ item }: { item: Item }) {
   const [open, setOpen] = useState<null | "search" | "manual">(null);
   const [pcgsBusy, setPcgsBusy] = useState(false);
   const [pcgsError, setPcgsError] = useState<string | null>(null);
+  const slabbed = item.condition?.grading === "slabbed";
   const pcgsSlab = (item.condition?.grading_service ?? "").toUpperCase() === "PCGS" && Boolean(item.condition?.cert_number);
   const history = useQuery({ queryKey: ["valuations", item.id], queryFn: () => api.valuations(item.id) });
   const cur = item.values?.currency ?? "USD";
@@ -92,16 +93,27 @@ export default function MarketValue({ item }: { item: Item }) {
             <tr><th>As of</th><th>Each</th><th>From</th><th aria-label="Actions" /></tr>
           </thead>
           <tbody>
-            {history.data.map((v, i) => (
-              <tr key={v.id} className={i === 0 ? "is-current" : ""}>
-                <td>{longDate(v.as_of)}{i === 0 && <span className="hint"> (in use)</span>}</td>
+            {history.data.map((v) => (
+              <tr key={v.id} className={v.in_use ? "is-current" : ""}>
+                <td>
+                  {longDate(v.as_of)}
+                  {v.in_use && <span className="hint"> ({v.pinned ? "in use, your choice" : "in use"})</span>}
+                </td>
                 <td className="tabular">{money(v.value_each, v.currency)}</td>
                 <td>
                   {v.source ?? (v.kind === "comps" ? "Sold listings" : "Entered by you")}
                   {v.details?.keyword && <span className="hint"> for “{v.details.keyword}”, {v.details.basis === "total" ? "with" : "without"} shipping</span>}
                   {v.notes && <span className="hint"> {v.notes}</span>}
+                  {slabbed && v.details && "numista" in v.details && !v.in_use && (
+                    <span className="hint"> Numista prices raw coins, so this isn't used for a slabbed coin unless you choose it.</span>
+                  )}
                 </td>
-                <td>
+                <td className="valuation-actions">
+                  {v.pinned ? (
+                    <button className="ghost small" onClick={async () => { await api.useValuation(v.id, false); await refresh(); }}>Undo choice</button>
+                  ) : !v.in_use ? (
+                    <button className="ghost small" onClick={async () => { await api.useValuation(v.id, true); await refresh(); }}>Use this</button>
+                  ) : null}
                   <button
                     className="ghost small danger"
                     onClick={async () => {

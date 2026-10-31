@@ -59,12 +59,27 @@ class ItemValues:
 _AUTO = object()
 
 
+def is_raw_estimate(v: Valuation) -> bool:
+    """A catalogue estimate for raw coins (Numista's G to Unc bands), not a price for a graded, slabbed coin."""
+    return bool(v.details and "numista" in v.details)
+
+
 def latest_valuation(item: Item, currency: str | None) -> Valuation | None:
-    """The newest market value in this currency (a value in another currency is ignored, not converted)."""
-    for v in item.valuations:  # ordered newest first
-        if currency is None or v.currency == currency:
-            return v
-    return None
+    """The market value in use, in this currency (a value in another currency is ignored, not converted).
+
+    The one the owner chose, if any; else the newest. For a slabbed coin a raw-coin catalogue estimate (Numista)
+    only counts when there's nothing else: sold listings, a price guide or the owner's own figure come first.
+    """
+    values = [v for v in item.valuations if currency is None or v.currency == currency]  # newest first
+    chosen = next((v for v in values if v.pinned), None)
+    if chosen is not None:
+        return chosen
+    slabbed = item.condition is not None and item.condition.grading == "slabbed"
+    if slabbed:
+        graded = next((v for v in values if not is_raw_estimate(v)), None)
+        if graded is not None:
+            return graded
+    return values[0] if values else None
 
 
 def item_values(

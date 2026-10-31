@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    false,
     JSON,
     Boolean,
     CheckConstraint,
@@ -487,6 +488,7 @@ class Valuation(Base):
     # comps: {"keyword", "basis": "sold"|"total", "count", "low", "median", "high", "listings": [...]}
     details: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())  # the owner chose this one
     item: Mapped[Item] = relationship(back_populates="valuations")
 
 

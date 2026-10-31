@@ -7,6 +7,7 @@ import statistics
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.crypto import EncryptionUnavailable
@@ -18,7 +19,7 @@ from app.providers.base import ProviderError, http_client
 from app.schemas import CompListing, CompsSearchIn, CompsSearchOut, CompsStats, ValuationIn, ValuationOut
 from app.services import items as item_svc
 from app.services import providers as psvc
-from app.services.valuation import money
+from app.services.valuation import latest_valuation, money
 
 router = APIRouter(tags=["valuations"])
 
@@ -44,9 +45,33 @@ def suggested_keyword(item: Item) -> str:
     return kw[:200]
 
 
+def _with_use(item, principal) -> list[ValuationOut]:
+    used = latest_valuation(item, principal.user.base_currency)
+    return [ValuationOut.model_validate(v).model_copy(update={"in_use": used is not None and v.id == used.id}) for v in item.valuations]
+
+
 @router.get("/items/{item_id}/valuations", response_model=list[ValuationOut])
 def list_valuations(item_id: int, principal: Principal = Depends(read_items), db: Session = Depends(get_db)):
-    return _item(db, principal, item_id).valuations
+    return _with_use(_item(db, principal, item_id), principal)
+
+
+class UseIn(BaseModel):
+    use: bool  # true: use this value for the item; false: go back to the automatic choice
+
+
+@router.put("/valuations/{valuation_id}/use", response_model=list[ValuationOut])
+def use_valuation(valuation_id: int, body: UseIn, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+    """Choose which market value counts for the item, or go back to the automatic choice. Returns the item's values."""
+    v = db.get(Valuation, valuation_id)
+    if v is None:
+        raise HTTPException(404, "Valuation not found")
+    item = _item(db, principal, v.item_id)
+    for other in item.valuations:
+        other.pinned = False
+    v.pinned = body.use
+    db.commit()
+    db.refresh(item, ["valuations"])
+    return _with_use(item, principal)
 
 
 @router.post("/items/{item_id}/valuations", response_model=ValuationOut, status_code=201)

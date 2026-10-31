@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { expect, test } from "@playwright/test";
 
 import { fixture, signIn, unique } from "./helpers";
@@ -40,7 +42,11 @@ test("delete photos from the Photos page", async ({ page }) => {
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("0007_obv.jpg"), fixture("0007_rev.jpg")]);
+  // copies of the fixtures that no other test uploads (bytes after a JPEG's end are ignored, but change its hash)
+  const own = (name: string) => ({
+    name, mimeType: "image/jpeg", buffer: Buffer.concat([readFileSync(fixture(name)), Buffer.from(` ${title} ${name}`)]),
+  });
+  await page.locator(".photo-manager input[type=file]").setInputFiles([own("0007_obv.jpg"), own("0007_rev.jpg")]);
   await expect(page.locator(".photo-list li")).toHaveCount(2);
   const itemUrl = page.url();
 

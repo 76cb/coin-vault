@@ -764,3 +764,4 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
 .library-tick.on { background: var(--danger); border-color: var(--danger); }
 .library-tile.is-ticking.is-selected { outline-color: var(--danger); border-color: var(--danger); }
 .photo-detail-foot { display: flex; justify-content: space-between; gap: 0.5rem; }
+.valuation-actions { white-space: nowrap; text-align: right; } .valuation-actions button + button { margin-left: 0.25rem; }

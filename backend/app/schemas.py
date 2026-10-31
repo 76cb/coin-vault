@@ -521,6 +521,8 @@ class ValuationIn(BaseModel):
 class ValuationOut(_Base):
     id: int
     item_id: int
+    pinned: bool = False
+    in_use: bool = False  # the one the item's market value comes from
     kind: str
     value_each: Decimal
     currency: str
