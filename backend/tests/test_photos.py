@@ -161,3 +161,14 @@ def test_x_accel_redirect_mode(api, images, monkeypatch):
     r = api.get(photo["urls"]["thumb"])
     assert r.status_code == 200 and r.headers["x-accel-redirect"].startswith("/protected-media/derived/")
     assert r.content == b""
+
+
+def test_media_files_are_group_readable(app):
+    """nginx (in the coinvault group) serves media via X-Accel, so files must be g+r, not mkstemp's 0600."""
+    import stat
+
+    from app.services import storage
+
+    storage.write_bytes("originals/aa/bb/perm-test.jpg", b"x")
+    mode = stat.S_IMODE(storage.path_for("originals/aa/bb/perm-test.jpg").stat().st_mode)
+    assert mode & stat.S_IRGRP and not mode & stat.S_IROTH

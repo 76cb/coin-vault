@@ -153,6 +153,7 @@ rm -f /etc/nginx/sites-enabled/default
 # nginx (www-data) must read the frontend and, via X-Accel, the media folder.
 usermod -aG coinvault www-data
 chmod 0750 "$DATA_DIR" "$DATA_DIR/media"
+chmod -R g+rX "$DATA_DIR/media"
 nginx -t
 systemctl daemon-reload
 systemctl enable --now coinvault

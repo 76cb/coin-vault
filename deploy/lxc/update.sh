@@ -43,6 +43,9 @@ fi
 
 ensure_encryption_key
 
+# Before 2026-10-31, uploads were saved 0600, which nginx (reading via the coinvault group) can't serve.
+chmod -R g+rX /var/lib/coinvault/media
+
 echo "==> Updating the backend"
 "$VENV/bin/pip" install -q --upgrade -e "$APP_DIR/backend"
 

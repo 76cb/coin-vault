@@ -131,7 +131,7 @@ export default function ItemPage() {
                 <dd>{STATUS_LABELS[it.status]}</dd>
                 {grade(it) && (<><dt>Grade</dt><dd>{grade(it)}{it.condition?.cert_number ? `, cert ${it.condition.cert_number}` : ""}</dd></>)}
                 {details.map(([k, v]) => (
-                  <FactRow key={k} label={DETAIL_LABELS[k] ?? k} value={v === true ? "Yes" : String(v)} />
+                  <FactRow key={k} label={DETAIL_LABELS[k] ?? k} value={v === true ? "Yes" : tidyNumber(String(v))} />
                 ))}
                 {Object.entries(attributes).map(([k, v]) => (
                   <FactRow key={k} label={k} value={v} />
@@ -260,6 +260,11 @@ function ValuePanel({ item }: { item: Item }) {
       {missing.length > 0 && <p className="hint">No spot price yet for {missing.join(" and ")}, so that part of the melt value is missing.</p>}
     </section>
   );
+}
+
+/** "100.000000" -> "100"; leaves anything that isn't a plain decimal alone (years, serials, text). */
+function tidyNumber(v: string): string {
+  return /^-?\d+\.\d+$/.test(v) ? String(Number(v)) : v;
 }
 
 function FactRow({ label, value }: { label: string; value: string }) {

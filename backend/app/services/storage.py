@@ -41,6 +41,9 @@ def exists(key: str) -> bool:
     return path_for(key).exists()
 
 
+FILE_MODE = 0o640
+
+
 def write_bytes(key: str, data: bytes) -> None:
     """Atomic write; content-addressed keys mean an existing file already has these bytes."""
     p = path_for(key)
@@ -53,6 +56,8 @@ def write_bytes(key: str, data: bytes) -> None:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        # mkstemp creates 0600 files; nginx serves media through the coinvault group (X-Accel), so it needs g+r.
+        os.chmod(tmp, FILE_MODE)
         os.replace(tmp, p)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
