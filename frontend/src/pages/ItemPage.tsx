@@ -94,7 +94,7 @@ export default function ItemPage() {
       <div className="item-layout">
         <div className="item-photos">
           {shown ? (
-            <a href={shown.urls.original} target="_blank" rel="noreferrer" className="hero-photo">
+            <a href={shown.urls.edited ?? shown.urls.original} target="_blank" rel="noreferrer" className="hero-photo">
               <img src={shown.urls.medium} alt={`${ROLE_LABELS[shown.role]} of ${it.title}`} />
             </a>
           ) : (

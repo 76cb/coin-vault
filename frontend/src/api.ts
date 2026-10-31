@@ -61,7 +61,8 @@ export interface Photo {
   bytes: number;
   quality: Quality;
   original_filename: string | null;
-  urls: { thumb: string; medium: string; original: string };
+  urls: { thumb: string; medium: string; original: string; unedited?: string; edited?: string };
+  edits?: Partial<import("./photoEdit").Edits> | null;
   duplicate_of_item_id?: number | null;
   duplicate_kind?: "exact" | "similar" | null;
 }
@@ -557,6 +558,7 @@ export const api = {
   reorderPhotos: (itemId: number, photo_ids: number[]) =>
     request<Photo[]>("PUT", `${A}/items/${itemId}/photos/order`, { photo_ids }),
   setCover: (itemId: number, photo_id: number) => request<void>("PUT", `${A}/items/${itemId}/cover`, { photo_id }),
+  setPhotoEdits: (id: number, edits: unknown) => request<Photo>("PUT", `${A}/photos/${id}/edits`, { edits }),
   deletePhoto: (id: number) => request<void>("DELETE", `${A}/photos/${id}`),
 
   uploadDocument: (file: File, fields: { kind: string; title?: string; doc_date?: string; item_ids?: number[] }) => {

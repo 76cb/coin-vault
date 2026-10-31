@@ -14,14 +14,15 @@ from app.db import get_db
 from app.deps import Principal, read_items, write_items
 from app.models import Item, Photo
 from app.models import UploadFile as UploadFileRow
-from app.schemas import CoverIn, PhotoOrder, PhotoOut, PhotoPatch, PhotoRole
+from app.schemas import CoverIn, PhotoEditsIn, PhotoOrder, PhotoOut, PhotoPatch, PhotoRole
 from app.services import items as item_svc
-from app.services import media, storage
+from app.services import media, photo_edit, storage
 from app.services.images import IntakeError, store_image
 
 router = APIRouter(tags=["photos"])
 
 Size = Literal["thumb", "medium", "original"]
+PhotoSize = Literal["thumb", "medium", "original", "unedited", "edited"]
 
 
 def _photo(db: Session, principal: Principal, photo_id: int) -> Photo:
@@ -87,6 +88,37 @@ def patch_photo(photo_id: int, body: PhotoPatch, principal: Principal = Depends(
     return item_svc.photo_out(photo)
 
 
+def _drop_edited(db: Session, photo: Photo) -> None:
+    """Delete the photo's edited copies unless another photo shows the same file with the same edits."""
+    if not photo.edits:
+        return
+    ehash = photo_edit.edit_hash(photo.edits)
+    others = db.scalars(select(Photo).where(Photo.sha256 == photo.sha256, Photo.id != photo.id, Photo.edits.is_not(None)))
+    if not any(photo_edit.edit_hash(o.edits) == ehash for o in others):
+        photo_edit.remove_edited(photo.sha256, ehash)
+
+
+@router.put("/photos/{photo_id}/edits", response_model=PhotoOut)
+def set_edits(photo_id: int, body: PhotoEditsIn, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+    """Save crop, straighten and colour settings; the display copies are rendered from the untouched original."""
+    photo = _photo(db, principal, photo_id)
+    edits = body.edits.model_dump(exclude_defaults=True) if body.edits and not body.edits.is_identity() else None
+    if edits == photo.edits:
+        return item_svc.photo_out(photo)
+    if edits:
+        try:
+            _, width, height = photo_edit.write_edited(photo.storage_key, photo.sha256, edits)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(422, f"The photo couldn't be edited: {exc}") from exc
+    else:
+        width, height = photo_edit.display_size(photo.storage_key)
+    _drop_edited(db, photo)
+    photo.edits = edits
+    photo.width, photo.height = width, height
+    db.commit()
+    return item_svc.photo_out(photo)
+
+
 @router.put("/items/{item_id}/photos/order", response_model=list[PhotoOut])
 def reorder_photos(
     item_id: int, body: PhotoOrder, principal: Principal = Depends(write_items), db: Session = Depends(get_db)
@@ -117,6 +149,7 @@ def delete_photo(photo_id: int, principal: Principal = Depends(write_items), db:
     photo = _photo(db, principal, photo_id)
     item = db.get(Item, photo.item_id)
     key, sha = photo.storage_key, photo.sha256
+    _drop_edited(db, photo)
     if item.cover_photo_id == photo.id:
         item.cover_photo_id = None
     db.delete(photo)
@@ -131,6 +164,10 @@ def _serve(storage_key: str, sha256: str, mime: str, size: Size, filename: str |
         key, media_type = storage_key, mime
     else:
         key, media_type = storage.derived_key(sha256, size), "image/webp"
+    return _serve_key(key, media_type, filename if size == "original" else None)
+
+
+def _serve_key(key: str, media_type: str, filename: str | None = None) -> Response:
     path = storage.path_for(key)
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "File missing on disk")
@@ -139,15 +176,30 @@ def _serve(storage_key: str, sha256: str, mime: str, size: Size, filename: str |
     if s.use_x_accel:
         headers["X-Accel-Redirect"] = f"{s.x_accel_prefix}/{key}"
         return Response(status_code=200, media_type=media_type, headers=headers)
-    disp_name = filename if size == "original" and filename else None
     return FileResponse(
-        path, media_type=media_type, headers=headers, filename=disp_name, content_disposition_type="inline"
+        path, media_type=media_type, headers=headers, filename=filename or None, content_disposition_type="inline"
     )
 
 
 @router.get("/media/photos/{photo_id}/{size}")
-def serve_photo(photo_id: int, size: Size, principal: Principal = Depends(read_items), db: Session = Depends(get_db)):
+def serve_photo(photo_id: int, size: PhotoSize, principal: Principal = Depends(read_items), db: Session = Depends(get_db)):
+    """thumb and medium show the edits; original is the file as uploaded; unedited is medium without
+    edits (what the editor starts from); edited is the edited photo at full size, as a JPEG."""
     photo = _photo(db, principal, photo_id)
+    if size == "unedited":
+        return _serve(photo.storage_key, photo.sha256, photo.mime, "medium", None)
+    if size == "edited":
+        if not photo.edits:
+            return _serve(photo.storage_key, photo.sha256, photo.mime, "original", photo.original_filename)
+        stem = (photo.original_filename or f"photo-{photo.id}").rsplit(".", 1)[0]
+        return Response(photo_edit.full_jpeg(photo.storage_key, photo.edits), media_type="image/jpeg", headers={
+            "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": f'inline; filename="{stem}-edited.jpg"'})
+    if photo.edits and size in ("thumb", "medium"):
+        key = photo_edit.edited_key(photo.sha256, size, photo_edit.edit_hash(photo.edits))
+        if not storage.exists(key):  # e.g. derived files cleared; render them again
+            photo_edit.write_edited(photo.storage_key, photo.sha256, photo.edits)
+        return _serve_key(key, "image/webp")
     return _serve(photo.storage_key, photo.sha256, photo.mime, size, photo.original_filename)
 
 

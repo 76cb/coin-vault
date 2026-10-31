@@ -195,6 +195,7 @@ class PhotoOut(_Base):
     original_filename: str | None
     created_at: dt.datetime
     urls: dict[str, str]
+    edits: dict[str, Any] | None = None
 
 
 class DocumentSummary(_Base):
@@ -332,6 +333,40 @@ class TagIn(_Base):
 
 class PhotoPatch(_Base):
     role: PhotoRole
+
+
+class PhotoCrop(_Base):
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    w: float = Field(gt=0.01, le=1)
+    h: float = Field(gt=0.01, le=1)
+
+    @model_validator(mode="after")
+    def _inside(self):
+        if self.x + self.w > 1.0001 or self.y + self.h > 1.0001:
+            raise ValueError("The crop must stay inside the photo")
+        return self
+
+
+class PhotoEdits(_Base):
+    rotate: Literal[0, 90, 180, 270] = 0
+    flip: bool = False
+    straighten: float = Field(default=0, ge=-45, le=45)
+    crop: PhotoCrop | None = None
+    exposure: int = Field(default=0, ge=-100, le=100)
+    contrast: int = Field(default=0, ge=-100, le=100)
+    saturation: int = Field(default=0, ge=-100, le=100)
+    warmth: int = Field(default=0, ge=-100, le=100)
+    sharpness: int = Field(default=0, ge=0, le=100)
+
+    def is_identity(self) -> bool:
+        c = self.crop
+        whole = c is None or (c.x <= 0.0001 and c.y <= 0.0001 and c.w >= 0.9999 and c.h >= 0.9999)
+        return whole and self.model_copy(update={"crop": None}) == PhotoEdits()
+
+
+class PhotoEditsIn(_Base):
+    edits: PhotoEdits | None  # null: back to the original
 
 
 class PhotoOrder(_Base):

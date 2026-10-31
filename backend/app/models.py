@@ -315,6 +315,8 @@ class Photo(Base):
     quality: Mapped[dict] = mapped_column(JSON, default=dict)
     original_filename: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
+    # non-destructive edits (crop, straighten, colour); the original file is never changed
+    edits: Mapped[dict | None] = mapped_column(JSON)
 
 
 document_links = Table(

@@ -86,8 +86,8 @@ class FakeProviders:
                 "x-rate-limit-rapid-free-plans-hard-limit-remaining": str(7500 - self.ms_used),
                 "x-rate-limit-rapid-free-plans-hard-limit-reset": "86400",
             }
-            if url.path == "/api/market-status":
-                return httpx.Response(200, json={"status": "open", "next": "2026-10-30T21:00:00Z"}, headers=headers)
+            if url.path != "/metal-quote":  # what RapidAPI's gateway says for paths not in the listing
+                return httpx.Response(404, json={"message": f"Endpoint '{url.path}' does not exist"})
             sym = url.params.get("symbol")
             body = self.ms_body or {
                 "ID": 1793412613,

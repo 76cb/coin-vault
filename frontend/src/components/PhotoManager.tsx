@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { api, Item, Photo, PhotoRole, ROLE_LABELS } from "../api";
 import DropZone from "./DropZone";
+import PhotoEditor from "./PhotoEditor";
 import { DuplicateNote, QualityNote } from "./QualityNote";
 
 export default function PhotoManager({ item }: { item: Item }) {
@@ -10,6 +11,7 @@ export default function PhotoManager({ item }: { item: Item }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpload, setLastUpload] = useState<Photo[]>([]);
+  const [editing, setEditing] = useState<Photo | null>(null);
   const photos = item.photos;
   const refresh = () => qc.invalidateQueries({ queryKey: ["item", item.id] });
 
@@ -56,7 +58,7 @@ export default function PhotoManager({ item }: { item: Item }) {
             const fresh = flagged(p);
             return (
               <li key={p.id} className={item.cover_photo_id === p.id ? "is-cover" : ""}>
-                <a href={p.urls.original} target="_blank" rel="noreferrer" className="photo-thumb">
+                <a href={p.urls.edited ?? p.urls.original} target="_blank" rel="noreferrer" className="photo-thumb">
                   <img src={p.urls.thumb} alt={`${ROLE_LABELS[p.role]} of ${item.title}`} />
                 </a>
                 <div className="photo-meta">
@@ -65,11 +67,12 @@ export default function PhotoManager({ item }: { item: Item }) {
                       <option key={k} value={k}>{v}</option>
                     ))}
                   </select>
-                  <span className="hint">{p.width}×{p.height}</span>
+                  <span className="hint">{p.width}×{p.height}{p.edits ? ", edited" : ""}</span>
                   <QualityNote quality={p.quality} />
                   {fresh && <DuplicateNote kind={fresh.duplicate_kind} itemId={fresh.duplicate_of_item_id} />}
                 </div>
                 <div className="photo-actions">
+                  <button type="button" className="ghost small" disabled={busy} onClick={() => setEditing(p)}>Edit</button>
                   <button type="button" className="ghost small" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label="Move earlier">Up</button>
                   <button type="button" className="ghost small" disabled={busy || i === photos.length - 1} onClick={() => move(i, 1)} aria-label="Move later">Down</button>
                   {item.cover_photo_id === p.id ? (
@@ -90,6 +93,17 @@ export default function PhotoManager({ item }: { item: Item }) {
             );
           })}
         </ol>
+      )}
+      {editing && (
+        <PhotoEditor
+          photo={editing}
+          title={item.title}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            await refresh();
+            await qc.invalidateQueries({ queryKey: ["items"] });
+          }}
+        />
       )}
     </section>
   );

@@ -10,8 +10,10 @@ Metals.Dev    https://metals.dev/docs
     GET https://api.metals.dev/v1/latest?api_key=&currency=&unit=toz  (one call, all metals)
     -> {"status","currency","unit","metals":{"gold","silver","platinum","palladium",...},"timestamps":{"metal"}}
     GET https://api.metals.dev/usage?api_key=  -> {"status","plan","total","used","remaining"}
-Metal Sentinel https://metal-sentinel.com/openapi.json (checked 2026-10-31), through RapidAPI
-    GET https://metal-sentinel.p.rapidapi.com/api/metal-quote?symbol=PT&currency=USD
+Metal Sentinel through RapidAPI (the listing's "Get metal price" playground, checked 2026-10-31)
+    GET https://metal-sentinel.p.rapidapi.com/metal-quote?symbol=PT&currency=USD
+    Note: metal-sentinel.com/openapi.json and its GitHub samples say /api/metal-quote, but RapidAPI's
+    gateway answers that with 404 "Endpoint '/api/metal-quote' does not exist"; the listing has no /api.
         headers X-RapidAPI-Key, X-RapidAPI-Host: metal-sentinel.p.rapidapi.com
     -> {"ID", "results": [{"symbol","currency","ask","mid","bid",...,"timestamp" (Unix s),"unit" ("OUNCE"),
         "originalTime"}]}  or, with HTTP 200, {"error": "...", "errors": {...}}
@@ -212,9 +214,9 @@ class MetalSentinel:
         for metal, symbol in METAL_SENTINEL_SYMBOLS.items():
             if metals is not None and metal not in metals:
                 continue
-            endpoints.append(f"/api/metal-quote?symbol={symbol}")
+            endpoints.append(f"/metal-quote?symbol={symbol}")
             try:
-                data, r = self._get(client, api_key, "/api/metal-quote", {"symbol": symbol, "currency": currency})
+                data, r = self._get(client, api_key, "/metal-quote", {"symbol": symbol, "currency": currency})
             except ProviderError as exc:
                 cost += exc.cost
                 problems.append(exc)
@@ -257,7 +259,7 @@ class MetalSentinel:
 
     def check(self, client: httpx.Client, api_key: str) -> tuple[str, UsageInfo | None]:
         """One request (it counts against the quota): a gold quote from the endpoint prices use, plus the quota headers."""
-        data, r = self._get(client, api_key, "/api/metal-quote", {"symbol": "AU", "currency": "USD"})
+        data, r = self._get(client, api_key, "/metal-quote", {"symbol": "AU", "currency": "USD"})
         q = self._quote(data, "Au", "AU", "USD")
         return f"Key accepted. Gold is {q.price_per_toz:,.2f} USD an ounce.", rapidapi_usage(r)
 

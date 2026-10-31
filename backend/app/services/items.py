@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.deps import Principal, request_id_var
 from app.services import spot as spot_svc
 from app.services import valuation
+from app.services.photo_edit import edit_hash
 from app.models import (
     User,
     AuditLog,
@@ -78,9 +79,18 @@ AUDITED_FIELDS = (
 # --- URLs ------------------------------------------------------------------------------
 
 
-def photo_urls(photo_id: int) -> dict[str, str]:
+
+def photo_urls(photo_id: int, edits: dict | None = None) -> dict[str, str]:
+    """Edited photos get a version in their display URLs, so browsers don't keep showing a cached copy."""
     base = f"/api/v1/media/photos/{photo_id}"
-    return {"thumb": f"{base}/thumb", "medium": f"{base}/medium", "original": f"{base}/original"}
+    v = f"?v={edit_hash(edits)}" if edits else ""
+    urls = {"thumb": f"{base}/thumb{v}", "medium": f"{base}/medium{v}", "original": f"{base}/original"}
+    if edits:
+        urls["unedited"] = f"{base}/unedited"
+        urls["edited"] = f"{base}/edited{v}"
+    else:
+        urls["unedited"] = f"{base}/medium"
+    return urls
 
 
 def upload_file_urls(file_id: int) -> dict[str, str]:
@@ -433,7 +443,8 @@ def _photo_out(p: Photo) -> PhotoOut:
         quality=p.quality or {},
         original_filename=p.original_filename,
         created_at=p.created_at,
-        urls=photo_urls(p.id),
+        urls=photo_urls(p.id, p.edits),
+        edits=p.edits,
     )
 
 
@@ -442,8 +453,8 @@ def photo_out(p: Photo) -> PhotoOut:
 
 
 def cover_thumb(item: Item) -> str | None:
-    pid = item.cover_photo_id or (item.photos[0].id if item.photos else None)
-    return photo_urls(pid)["thumb"] if pid else None
+    photo = next((p for p in item.photos if p.id == item.cover_photo_id), None) or (item.photos[0] if item.photos else None)
+    return photo_urls(photo.id, photo.edits)["thumb"] if photo else None
 
 
 def values_out(db: Session, item: Item, currency: str, spot: dict) -> ItemValuesOut:

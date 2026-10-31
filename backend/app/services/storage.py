@@ -66,3 +66,11 @@ def write_bytes(key: str, data: bytes) -> None:
 
 def remove(key: str) -> None:
     path_for(key).unlink(missing_ok=True)
+
+
+def remove_matching(folder_key: str, pattern: str) -> None:
+    """Remove files in one storage folder whose names match a glob pattern."""
+    folder = path_for(folder_key + "/x").parent
+    if folder.is_dir():
+        for f in folder.glob(pattern):
+            f.unlink(missing_ok=True)
