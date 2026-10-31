@@ -35,3 +35,16 @@ test("value updates: schedule and explanation in Settings", async ({ page }) => 
   await s.getByRole("combobox", { name: "On" }).selectOption("sun");
   await s.getByRole("button", { name: "Save schedule" }).click();
 });
+
+test("value updates: the next run's date shows (the real server runs its scheduler)", async ({ page }) => {
+  await page.route("**/api/v1/value-updates", (route) => route.fulfill({
+    json: { enabled: true, day: "sun", time: "05:40", timezone: "America/New_York", next_run: "2026-11-01T09:40:00Z", running: false, tracked_pcgs: 1, tracked_numista: 0, last: null },
+  }));
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await signIn(page);
+  await page.getByRole("link", { name: "Settings" }).click();
+  const s = page.getByRole("region", { name: "Value updates" });
+  await expect(s.getByText(/next Sun, Nov 1, 2026/)).toBeVisible();
+  expect(errors).toEqual([]);
+});

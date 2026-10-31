@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { api, setCsrf } from "./api";
 import SpotTicker from "./components/SpotTicker";
+import ErrorBoundary from "./ErrorBoundary";
 import ThemeToggle from "./components/ThemeToggle";
 import Collection from "./pages/Collection";
 import Dashboard from "./pages/Dashboard";
@@ -18,6 +19,7 @@ import Upload from "./pages/Upload";
 export default function App() {
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, retry: false, staleTime: Infinity });
+  const path = useLocation().pathname;
 
   useEffect(() => {
     setCsrf(me.data?.csrf_token ?? null);
@@ -65,6 +67,7 @@ export default function App() {
         </div>
       </header>
       <main className="page">
+        <ErrorBoundary resetKey={path}>
         <Routes>
           <Route path="/" element={<Collection />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -76,6 +79,7 @@ export default function App() {
           <Route path="/settings" element={<Settings user={me.data.user.username} admin={me.data.user.is_admin} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </ErrorBoundary>
       </main>
     </div>
   );

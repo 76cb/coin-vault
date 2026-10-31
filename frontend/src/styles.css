@@ -950,3 +950,6 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
   .ai-grade-notes dd { margin-bottom: 0.35rem; }
 }
 :root[data-theme="dark"] .ai-conf.is-high { color: var(--good); }
+
+.page-error { max-width: 60ch; padding: 2rem 0; }
+.page-error code { word-break: break-word; }

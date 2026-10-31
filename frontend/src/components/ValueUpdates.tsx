@@ -6,7 +6,9 @@ import { ago, api, UpdateSource, ValueUpdates as Status } from "../api";
 const DAYS: [Status["day"], string][] = [
   ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"], ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"],
 ];
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: "short", dateStyle: "medium", timeStyle: "short" });
+// dateStyle/timeStyle can't be combined with weekday (browsers throw), so the parts are spelled out
+const when = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 function sourceLine(name: string, s: UpdateSource | undefined): string | null {
