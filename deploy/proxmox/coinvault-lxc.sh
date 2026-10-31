@@ -11,6 +11,7 @@
 #
 # Options (all optional): --ctid N --hostname NAME --cores N --memory MB --disk GB --storage ID
 #   --template-storage ID --bridge vmbr0 --ip dhcp|CIDR --gateway IP --nameserver IP --media-disk GB
+#   --debian 12|13 (template; 12 if DHCP misbehaves on an older Proxmox)
 #   --repo URL --branch NAME --admin USER
 # Secrets can be given in the environment instead of prompts:
 #   GITHUB_TOKEN (read access to the private repo), CV_ADMIN_PASSWORD.
@@ -29,6 +30,7 @@ BRIDGE="vmbr0"
 IP="dhcp"
 GATEWAY=""
 NAMESERVER=""
+DEBIAN=13
 MEDIA_DISK=0
 REPO="https://github.com/76cb/coin-vault.git"
 BRANCH="main"
@@ -57,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --ip) IP="$2"; shift 2 ;;
     --gateway) GATEWAY="$2"; shift 2 ;;
     --nameserver) NAMESERVER="$2"; shift 2 ;;
+    --debian) DEBIAN="$2"; shift 2 ;;
     --media-disk) MEDIA_DISK="$2"; shift 2 ;;
     --repo) REPO="$2"; shift 2 ;;
     --branch) BRANCH="$2"; shift 2 ;;
@@ -67,6 +70,8 @@ while [[ $# -gt 0 ]]; do
     *) die "unknown option $1 (see --help)" ;;
   esac
 done
+
+[[ "$DEBIAN" == "12" || "$DEBIAN" == "13" ]] || die "--debian must be 12 or 13"
 
 # Run a command, or only print it in --dry-run mode. Secrets never pass through here.
 run() {
@@ -93,7 +98,7 @@ if (( ! DRY_RUN )); then
 fi
 
 printf '\n%sCoin Vault — Proxmox LXC installer%s\n' "$c_ok" "$c_off"
-echo "Creates a Debian 13 container and installs Coin Vault into it. Keep it on your private LAN only."
+echo "Creates a Debian container and installs Coin Vault into it. Keep it on your private LAN only."
 echo
 
 # --- Questions --------------------------------------------------------------------------
@@ -162,7 +167,7 @@ NET="name=eth0,bridge=$BRIDGE,ip=$IP"
 echo
 msg "Summary"
 cat <<EOF
-   Container   $CTID ($CT_HOSTNAME), Debian 13, unprivileged
+   Container   $CTID ($CT_HOSTNAME), Debian $DEBIAN, unprivileged
    Resources   $CORES cores, ${MEMORY} MB RAM, ${DISK} GB on $STORAGE$( (( MEDIA_DISK > 0 )) && echo ", ${MEDIA_DISK} GB media disk" )
    Network     $BRIDGE, $IP${GATEWAY:+ via $GATEWAY}${NAMESERVER:+, DNS $NAMESERVER}
    Source      $REPO ($BRANCH)${TOKEN:+, with token}
@@ -174,13 +179,13 @@ if (( ! ASSUME_YES )); then
 fi
 
 # --- Template ---------------------------------------------------------------------------
-msg "Finding the Debian 13 template"
+msg "Finding the Debian $DEBIAN template"
 if (( DRY_RUN )); then
-  TEMPLATE="debian-13-standard_13.x_amd64.tar.zst"
+  TEMPLATE="debian-$DEBIAN-standard_$DEBIAN.x_amd64.tar.zst"
 else
   pveam update >/dev/null || warn "pveam update failed; using the cached template list"
-  TEMPLATE=$(pveam available --section system | awk '{print $2}' | grep -E '^debian-13-standard_.*amd64' | sort -V | tail -n1)
-  [[ -n "$TEMPLATE" ]] || die "no Debian 13 template found in 'pveam available'"
+  TEMPLATE=$(pveam available --section system | awk '{print $2}' | grep -E "^debian-$DEBIAN-standard_.*amd64" | sort -V | tail -n1)
+  [[ -n "$TEMPLATE" ]] || die "no Debian $DEBIAN template found in 'pveam available'"
 fi
 if (( DRY_RUN )) || ! pveam list "$TPL_STORAGE" | grep -q "$TEMPLATE"; then
   run pveam download "$TPL_STORAGE" "$TEMPLATE"
@@ -200,14 +205,22 @@ run pct start "$CTID"
 ok "container created and started"
 
 msg "Waiting for the network inside the container"
-if ! run pct exec "$CTID" -- bash -c 'for i in $(seq 1 180); do getent hosts deb.debian.org >/dev/null && exit 0; sleep 1; done; exit 1'; then
+NET_WAIT='for i in $(seq 1 180); do
+  getent hosts deb.debian.org >/dev/null && exit 0
+  if [ "$i" = 45 ] && ! ip -4 addr show eth0 | grep -q inet; then
+    echo "   no address yet; restarting networking once" >&2
+    systemctl restart networking 2>/dev/null || ifup eth0 2>/dev/null || true
+  fi
+  sleep 1
+done; exit 1'
+if ! run pct exec "$CTID" -- bash -c "$NET_WAIT"; then
   warn "The container has no working network after 3 minutes. What it sees:"
   pct exec "$CTID" -- ip -4 addr show eth0 || true
   pct exec "$CTID" -- ip route || true
   pct exec "$CTID" -- cat /etc/resolv.conf || true
   pct exec "$CTID" -- ping -c2 -W2 1.1.1.1 || true
   echo
-  echo "  No 'inet' address on eth0  -> no DHCP on bridge $BRIDGE: re-run with --ip 192.168.x.y/24 --gateway 192.168.x.1"
+  echo "  No 'inet' address on eth0  -> DHCP failed: re-run with --debian 12, or update Proxmox (apt update && apt full-upgrade)"
   echo "  Address but ping fails     -> wrong gateway or VLAN on $BRIDGE"
   echo "  Ping works, names fail     -> DNS: re-run with --nameserver 1.1.1.1 (or your router's IP)"
   echo
