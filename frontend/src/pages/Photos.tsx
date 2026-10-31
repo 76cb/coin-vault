@@ -1,28 +1,105 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, LibraryFile, PhotoRole, ROLE_LABELS } from "../api";
 import PhotoLibrary from "../components/PhotoLibrary";
 
-/** All your photos in one place: see where each is used, and put any of them on an item. */
+/** Deletes photos everywhere after saying exactly what goes. Returns false if the owner said no. */
+async function confirmDelete(files: LibraryFile[]): Promise<boolean> {
+  const items = new Map<number, string>();
+  files.forEach((f) => f.items.forEach((i) => items.set(i.item_id, i.title)));
+  const what = files.length === 1 ? "this photo" : `these ${files.length} photos`;
+  const where = items.size
+    ? `\n\nThey come off ${items.size === 1 ? "this item" : `these ${items.size} items`}:\n${[...items.values()].slice(0, 12).map((t) => `• ${t}`).join("\n")}${items.size > 12 ? `\n…and ${items.size - 12} more` : ""}`
+    : "";
+  return window.confirm(`Delete ${what} for good?${where}\n\nThis can't be undone.`);
+}
+
+/** All your photos in one place: see where each is used, put any of them on an item, or delete them. */
 export default function Photos() {
+  const qc = useQueryClient();
   const [file, setFile] = useState<LibraryFile | null>(null);
+  const [ticking, setTicking] = useState(false);
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [pageFiles, setPageFiles] = useState<LibraryFile[]>([]);
+  const known = useRef(new Map<string, LibraryFile>());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const onFiles = useCallback((fs: LibraryFile[]) => {
+    fs.forEach((f) => known.current.set(f.sha256, f));
+    setPageFiles(fs);
+  }, []);
+
+  const refresh = async () => {
+    await qc.invalidateQueries({ queryKey: ["library"] });
+    await qc.invalidateQueries({ queryKey: ["items"] });
+    await qc.invalidateQueries({ queryKey: ["item"] });
+    await qc.invalidateQueries({ queryKey: ["summary"] });
+  };
+
+  const remove = async (shas: string[]) => {
+    const files = shas.map((s) => known.current.get(s)).filter(Boolean) as LibraryFile[];
+    if (!files.length || !(await confirmDelete(files))) return false;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.deleteFromLibrary(shas);
+      setNote(`Deleted ${r.deleted} ${r.deleted === 1 ? "photo" : "photos"}${r.photos_removed ? `, taken off ${r.photos_removed} ${r.photos_removed === 1 ? "item photo" : "item photos"}` : ""}.`);
+      setTicked(new Set());
+      setFile(null);
+      await refresh();
+      return true;
+    } catch (err) {
+      setError((err as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tick = (f: LibraryFile) =>
+    setTicked((t) => {
+      const n = new Set(t);
+      if (n.has(f.sha256)) n.delete(f.sha256);
+      else n.add(f.sha256);
+      return n;
+    });
+
   return (
     <>
       <div className="page-head">
         <h1>Photos</h1>
+        <div className="head-actions">
+          <button type="button" className={ticking ? "on" : ""} aria-pressed={ticking} onClick={() => { setTicking(!ticking); setTicked(new Set()); setFile(null); setNote(null); }}>
+            {ticking ? "Done selecting" : "Select several"}
+          </button>
+        </div>
       </div>
-      <p className="muted lede">Every photo you've uploaded, on items or not. Choose one to see where it's used or to put it on an item; the file is shared, not copied.</p>
-      <div className={`photos-layout${file ? " has-detail" : ""}`}>
-        <PhotoLibrary selected={file?.sha256 ?? null} onSelect={setFile} />
-        {file && <PhotoDetail key={file.sha256} file={file} onClose={() => setFile(null)} />}
+      <p className="muted lede">Every photo you've uploaded, on items or not. Choose one to see where it's used, put it on an item, or delete it.</p>
+      {ticking && (
+        <div className="select-bar" role="region" aria-label="Selected photos">
+          <span className="tabular">{ticked.size} selected</span>
+          <button type="button" className="ghost small" onClick={() => setTicked(new Set([...ticked, ...pageFiles.map((f) => f.sha256)]))}>Select all on this page</button>
+          {ticked.size > 0 && <button type="button" className="ghost small" onClick={() => setTicked(new Set())}>Clear</button>}
+          <button type="button" className="danger-solid" disabled={!ticked.size || busy} onClick={() => remove([...ticked])}>
+            {busy ? "Deleting…" : `Delete ${ticked.size || ""} ${ticked.size === 1 ? "photo" : "photos"}`.replace("  ", " ")}
+          </button>
+        </div>
+      )}
+      {error && <p className="error" role="alert">{error}</p>}
+      {note && <p className="success" role="status">{note}</p>}
+      <div className={`photos-layout${file && !ticking ? " has-detail" : ""}`}>
+        <PhotoLibrary selected={file?.sha256 ?? null} onSelect={ticking ? tick : setFile} ticked={ticking ? ticked : undefined} onFiles={onFiles} />
+        {file && !ticking && <PhotoDetail key={file.sha256} file={file} onClose={() => setFile(null)} onDelete={() => remove([file.sha256])} busy={busy} />}
       </div>
     </>
   );
 }
 
-function PhotoDetail({ file, onClose }: { file: LibraryFile; onClose: () => void }) {
+function PhotoDetail({ file, onClose, onDelete, busy: deleting }: { file: LibraryFile; onClose: () => void; onDelete: () => void; busy: boolean }) {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [itemId, setItemId] = useState<number | null>(null);
@@ -118,7 +195,12 @@ function PhotoDetail({ file, onClose }: { file: LibraryFile; onClose: () => void
         {error && <p className="error" role="alert">{error}</p>}
         {done && <p className="success">Added to <Link to={`/items/${done.id}`}>{done.title}</Link>.</p>}
       </div>
-      <button type="button" className="ghost small" onClick={onClose}>Close</button>
+      <div className="photo-detail-foot">
+        <button type="button" className="ghost small" onClick={onClose}>Close</button>
+        <button type="button" className="ghost small danger" disabled={deleting} onClick={onDelete}>
+          {deleting ? "Deleting…" : file.items.length > 1 ? `Delete from all ${file.items.length} items` : "Delete photo"}
+        </button>
+      </div>
     </aside>
   );
 }

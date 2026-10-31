@@ -32,3 +32,33 @@ test("put a photo from one item on another, from the item page and the Photos pa
   await expect(detail.getByRole("link", { name: first })).toBeVisible();
   await expect(detail.getByRole("link", { name: second })).toBeVisible();
 });
+
+test("delete photos from the Photos page", async ({ page }) => {
+  await signIn(page);
+  const title = unique("Delete photos");
+  await page.goto("/items/new");
+  await page.getByLabel("Title", { exact: true }).fill(title);
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("0007_obv.jpg"), fixture("0007_rev.jpg")]);
+  await expect(page.locator(".photo-list li")).toHaveCount(2);
+  const itemUrl = page.url();
+
+  await page.getByRole("link", { name: "Photos", exact: true }).click();
+  // one photo, from its panel
+  page.once("dialog", (d) => { expect(d.message()).toContain(title); d.accept(); });
+  await page.locator(".library-tile", { hasText: title }).first().click();
+  await page.getByRole("complementary", { name: "Selected photo" }).getByRole("button", { name: "Delete photo" }).click();
+  await expect(page.getByText("Deleted 1 photo")).toBeVisible();
+  // the other, by selecting several
+  await page.getByRole("button", { name: "Select several" }).click();
+  await page.locator(".library-tile", { hasText: title }).first().click();
+  await expect(page.getByText("1 selected")).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete 1 photo" }).click();
+  await expect(page.getByText("Deleted 1 photo")).toBeVisible();
+  await expect(page.locator(".library-tile", { hasText: title })).toHaveCount(0);
+
+  await page.goto(itemUrl);
+  await expect(page.locator(".photo-list li")).toHaveCount(0);
+});

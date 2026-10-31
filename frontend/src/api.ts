@@ -612,6 +612,8 @@ export const api = {
   setCover: (itemId: number, photo_id: number) => request<void>("PUT", `${A}/items/${itemId}/cover`, { photo_id }),
   library: (show: "all" | "on_items" | "not_on_items", page = 1, perPage = 60) =>
     request<{ total: number; files: LibraryFile[] }>("GET", `${A}/library?${new URLSearchParams({ show, page: String(page), per_page: String(perPage) })}`),
+  deleteFromLibrary: (sha256s: string[]) =>
+    request<{ deleted: number; photos_removed: number; uploads_removed: number }>("POST", `${A}/library/delete`, { sha256s }),
   addFromLibrary: (itemId: number, body: { sha256: string; role: PhotoRole; make_cover: boolean }) =>
     request<Photo>("POST", `${A}/items/${itemId}/photos/from-library`, body),
   setPhotoEdits: (id: number, edits: unknown) => request<Photo>("PUT", `${A}/photos/${id}/edits`, { edits }),

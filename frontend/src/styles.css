@@ -752,3 +752,15 @@ table.figures { border-collapse: collapse; width: 100%; font-size: var(--step--1
 .issue-list button.is-selected { border-color: var(--accent-line); box-shadow: inset 0 0 0 1px var(--accent-line); font-weight: 700; }
 .issue-best { flex: none; font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.5rem; border-radius: var(--r-pill); background: var(--gold-tint); color: var(--gold); border: 1px solid var(--champagne-dim); }
 .issue-more { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* selecting several photos to delete */
+.select-bar { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; padding: 0.6rem 0.9rem; margin-bottom: 1rem; background: var(--surface); border: 1px solid var(--hairline); border-top: 2px solid var(--champagne); }
+.select-bar .danger-solid { margin-left: auto; }
+button.danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }
+button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--danger); }
+.head-actions button.on { background: var(--primary-bg); color: var(--primary-ink); }
+.library-tile { position: relative; }
+.library-tick { position: absolute; top: 6px; left: 6px; z-index: 1; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; background: rgba(8, 13, 22, 0.45); color: #fff; display: grid; place-items: center; font-size: 0.85rem; font-weight: 800; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+.library-tick.on { background: var(--danger); border-color: var(--danger); }
+.library-tile.is-ticking.is-selected { outline-color: var(--danger); border-color: var(--danger); }
+.photo-detail-foot { display: flex; justify-content: space-between; gap: 0.5rem; }

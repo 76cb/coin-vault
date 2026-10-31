@@ -7,7 +7,7 @@ import datetime as dt
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,7 +15,7 @@ from app.db import get_db
 from app.deps import Principal, read_items, write_items
 from app.models import Item, Photo, UploadGroup
 from app.models import UploadFile as UploadFileRow
-from app.routers.photos import _serve
+from app.routers.photos import _drop_edited, _serve
 from app.schemas import PhotoOut, PhotoRole, _Base
 from app.services import items as item_svc
 from app.services import media, photo_edit
@@ -156,3 +156,55 @@ def add_from_library(item_id: int, body: FromLibraryIn, principal: Principal = D
         media.ensure_cover(db, item)
     db.commit()
     return item_svc.photo_out(new)
+
+
+class DeleteIn(_Base):
+    sha256s: list[str] = Field(min_length=1, max_length=500)
+
+
+class DeleteOut(BaseModel):
+    deleted: int  # files removed
+    photos_removed: int  # photos taken off items
+    uploads_removed: int  # files taken out of bulk uploads
+
+
+@router.post("/library/delete", response_model=DeleteOut)
+def delete_files(body: DeleteIn, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+    """Delete photos everywhere: off every item they're on and out of any bulk upload, then the files themselves
+    (a file is only removed from disk when nothing of anyone's still uses it)."""
+    wanted = set(body.sha256s)
+    photos = list(db.scalars(
+        select(Photo).join(Item, Item.id == Photo.item_id).where(Item.owner_id == principal.owner_id, Photo.sha256.in_(wanted))
+    ))
+    uploads = list(db.scalars(
+        select(UploadFileRow).where(UploadFileRow.owner_id == principal.owner_id, UploadFileRow.sha256.in_(wanted))
+    ))
+    found = {p.sha256 for p in photos} | {u.sha256 for u in uploads}
+    if not found:
+        raise HTTPException(404, "None of those photos are in your library")
+    files = {(p.storage_key, p.sha256) for p in photos} | {(u.storage_key, u.sha256) for u in uploads}
+    touched_items = {p.item_id for p in photos}
+    groups = {u.group_id for u in uploads}
+    for p in photos:
+        _drop_edited(db, p)
+        item = db.get(Item, p.item_id)
+        if item is not None and item.cover_photo_id == p.id:
+            item.cover_photo_id = None
+        db.delete(p)
+    for u in uploads:
+        db.delete(u)
+    db.flush()
+    for item_id in touched_items:
+        item = db.get(Item, item_id)
+        if item is not None:
+            media.ensure_cover(db, item)
+    for gid in groups:  # a bulk-upload group left with nothing in it is done with
+        g = db.get(UploadGroup, gid)
+        if g is not None:
+            db.refresh(g, ["files"])
+            if not g.files and g.status == "pending":
+                g.status = "discarded"
+    for key, sha in files:
+        media.release_file(db, key, sha)
+    db.commit()
+    return DeleteOut(deleted=len(found), photos_removed=len(photos), uploads_removed=len(uploads))

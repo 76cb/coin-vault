@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, LibraryFile } from "../api";
 
@@ -13,9 +13,13 @@ export default function PhotoLibrary({
   onSelect,
   exclude = [],
   initialShow = "all",
+  ticked,
+  onFiles,
 }: {
   selected: string | null;
   onSelect: (f: LibraryFile) => void;
+  ticked?: Set<string>; // selecting several: these are ticked, and a click ticks or unticks
+  onFiles?: (files: LibraryFile[]) => void; // the photos on the current page
   exclude?: string[]; // files already on the item being edited
   initialShow?: LibraryShow;
 }) {
@@ -23,6 +27,7 @@ export default function PhotoLibrary({
   const [page, setPage] = useState(1);
   const q = useQuery({ queryKey: ["library", show, page], queryFn: () => api.library(show, page, PER_PAGE) });
   const pages = q.data ? Math.max(1, Math.ceil(q.data.total / PER_PAGE)) : 1;
+  useEffect(() => { if (q.data && onFiles) onFiles(q.data.files); }, [q.data, onFiles]);
 
   return (
     <div className="library">
@@ -45,16 +50,18 @@ export default function PhotoLibrary({
         <ul className="library-grid">
           {q.data.files.map((f) => {
             const already = exclude.includes(f.sha256);
+            const on = ticked ? ticked.has(f.sha256) : selected === f.sha256;
             return (
               <li key={f.sha256}>
                 <button
                   type="button"
-                  className={`library-tile${selected === f.sha256 ? " is-selected" : ""}`}
-                  aria-pressed={selected === f.sha256}
+                  className={`library-tile${on ? " is-selected" : ""}${ticked ? " is-ticking" : ""}`}
+                  aria-pressed={on}
                   disabled={already}
                   onClick={() => onSelect(f)}
                   title={already ? "Already on this item" : f.filename ?? undefined}
                 >
+                  {ticked && <span className={`library-tick${on ? " on" : ""}`} aria-hidden>{on ? "✓" : ""}</span>}
                   <img src={f.urls.thumb} alt={f.filename ?? "Photo"} loading="lazy" />
                   <span className="library-caption">
                     {already ? "On this item" : f.items.length ? f.items.map((i) => i.title).join(", ") : f.waiting_upload ? "Waiting in uploads" : "Not on an item"}

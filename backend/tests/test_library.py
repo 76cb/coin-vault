@@ -63,3 +63,39 @@ def test_library_is_private(api, images, make_user, app):
         theirs = other.post("/api/v1/items", json={"item_type": "coin", "title": "Theirs"}).json()
         assert other.post(f"/api/v1/items/{theirs['id']}/photos/from-library", json={"sha256": sha}).status_code == 404
     assert api.get("/api/v1/media/library/not-a-hash/thumb").status_code == 404
+
+
+def test_delete_photos_everywhere(api, images):
+    from app.services import storage
+
+    a = make_item(api, "Del A")
+    b = make_item(api, "Del B")
+    pa = upload(api, a["id"], [("x.jpg", jpg(images, 31), "image/jpeg")]).json()[0]
+    upload(api, a["id"], [("y.jpg", jpg(images, 32), "image/jpeg")])
+    lib = {f["filename"]: f for f in api.get("/api/v1/library").json()["files"]}
+    x = lib["x.jpg"]["sha256"]
+    api.post(f"/api/v1/items/{b['id']}/photos/from-library", json={"sha256": x, "make_cover": True})
+    api.put(f"/api/v1/photos/{pa['id']}/edits", json={"edits": {"exposure": 30}})
+    loose = api.post("/api/v1/uploads", files=[("files", ("z.jpg", jpg(images, 33), "image/jpeg"))]).json()
+    z = next(f["sha256"] for f in api.get("/api/v1/library").json()["files"] if f["filename"] == "z.jpg")
+
+    from app.db import session_factory
+    from app.models import Photo
+    with session_factory()() as db:
+        key = db.get(Photo, pa["id"]).storage_key
+    assert storage.exists(key)
+
+    r = api.post("/api/v1/library/delete", json={"sha256s": [x, z]})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"deleted": 2, "photos_removed": 2, "uploads_removed": 1}
+    assert not storage.exists(key)  # nothing uses it any more
+    names = {f["filename"] for f in api.get("/api/v1/library").json()["files"]}
+    assert names == {"y.jpg"}
+    # covers move on: A to its remaining photo, B to none
+    full_a = api.get(f"/api/v1/items/{a['id']}").json()
+    assert len(full_a["photos"]) == 1 and full_a["cover_photo_id"] == full_a["photos"][0]["id"]
+    assert api.get(f"/api/v1/items/{b['id']}").json()["cover_photo_id"] is None
+    # the emptied bulk-upload group is closed
+    groups = api.get("/api/v1/uploads/groups").json()
+    assert all(g["id"] != loose["groups"][0]["id"] for g in groups if g.get("status") == "pending")
+    assert api.post("/api/v1/library/delete", json={"sha256s": [x]}).status_code == 404
