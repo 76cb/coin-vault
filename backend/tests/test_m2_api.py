@@ -171,11 +171,15 @@ def test_missing_encryption_key(api, monkeypatch):
 def test_metal_sentinel_test_button(api, fake):
     api.put("/api/v1/settings/providers/metal_sentinel", json={"api_key": "rapid-key"})
     r = api.post("/api/v1/settings/providers/metal_sentinel/test").json()
-    assert r["ok"] and "market is open" in r["message"] and "101 of 7500" in r["message"]
+    assert r["ok"] and "Gold is 4,005.00 USD" in r["message"] and "101 of 7500" in r["message"]
     assert r["provider"]["usage"]["used"] == 101 and r["provider"]["usage"]["provider_limit"] == 7500
-    assert fake.calls == ["metal-sentinel.p.rapidapi.com/api/market-status"]
+    assert fake.calls == ["metal-sentinel.p.rapidapi.com/api/metal-quote"]
     calls = api.get("/api/v1/settings/providers/metal_sentinel/calls").json()
     assert calls[0]["cost"] == 1  # RapidAPI counts every request, so the Test button does too
     fake.ms_status = 403
     bad = api.post("/api/v1/settings/providers/metal_sentinel/test").json()
     assert not bad["ok"] and "refused the key" in bad["message"]
+    # anything else RapidAPI refuses comes back with its own words and the path
+    fake.ms_status = 404
+    gone = api.post("/api/v1/settings/providers/metal_sentinel/test").json()
+    assert not gone["ok"] and "HTTP 404 for /api/metal-quote: You are not subscribed" in gone["message"]

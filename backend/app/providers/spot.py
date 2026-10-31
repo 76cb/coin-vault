@@ -15,7 +15,7 @@ Metal Sentinel https://metal-sentinel.com/openapi.json (checked 2026-10-31), thr
         headers X-RapidAPI-Key, X-RapidAPI-Host: metal-sentinel.p.rapidapi.com
     -> {"ID", "results": [{"symbol","currency","ask","mid","bid",...,"timestamp" (Unix s),"unit" ("OUNCE"),
         "originalTime"}]}  or, with HTTP 200, {"error": "...", "errors": {...}}
-    GET /api/market-status -> {"status": "open"|"closed", "next"}
+    Test: one gold quote (the endpoint prices use).
     One request per call. RapidAPI quota headers (docs.rapidapi.com/v2.0.0/docs/response-headers):
     x-rate-limit-rapid-free-plans-hard-limit-{limit,remaining,reset} on free plans,
     x-ratelimit-requests-{limit,remaining,reset} otherwise; reset is seconds until the quota resets.
@@ -196,7 +196,9 @@ class MetalSentinel:
             # validation and upstream feed errors come back as HTTP 200
             raise ProviderError(f"Metal Sentinel: {data['error']}", r.status_code, cost=1)
         if r.status_code != 200:
-            raise ProviderError(f"Metal Sentinel returned HTTP {r.status_code}", r.status_code, cost=1)
+            said = data.get("message") or data.get("detail") or (r.text or "").strip()
+            said = f": {str(said)[:160]}" if said else ""
+            raise ProviderError(f"Metal Sentinel returned HTTP {r.status_code} for {path}{said}", r.status_code, cost=1)
         return data, r
 
     def fetch(self, client: httpx.Client, currency: str, api_key: str | None, metals=None) -> SpotResult:
@@ -254,11 +256,10 @@ class MetalSentinel:
         return SpotQuote(metal, currency, _decimal(mid), ts)
 
     def check(self, client: httpx.Client, api_key: str) -> tuple[str, UsageInfo | None]:
-        """One request (it counts against the quota): market status, plus the quota headers."""
-        data, r = self._get(client, api_key, "/api/market-status")
-        status = data.get("status")
-        msg = "Key accepted." + (f" Metal Sentinel says the market is {status}." if status in ("open", "closed") else "")
-        return msg, rapidapi_usage(r)
+        """One request (it counts against the quota): a gold quote from the endpoint prices use, plus the quota headers."""
+        data, r = self._get(client, api_key, "/api/metal-quote", {"symbol": "AU", "currency": "USD"})
+        q = self._quote(data, "Au", "AU", "USD")
+        return f"Key accepted. Gold is {q.price_per_toz:,.2f} USD an ounce.", rapidapi_usage(r)
 
 
 SPOT_PROVIDERS = {p.key: p for p in (GoldApi(), MetalSentinel(), MetalsDev())}
