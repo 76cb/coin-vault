@@ -765,3 +765,21 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
 .library-tile.is-ticking.is-selected { outline-color: var(--danger); border-color: var(--danger); }
 .photo-detail-foot { display: flex; justify-content: space-between; gap: 0.5rem; }
 .valuation-actions { white-space: nowrap; text-align: right; } .valuation-actions button + button { margin-left: 0.25rem; }
+
+/* Settings, Backups */
+.backups { display: flex; flex-direction: column; gap: 0.9rem; }
+.backup-status { padding: 0.7rem 0.9rem; border: 1px solid var(--hairline); border-left: 3px solid var(--hairline-strong); background: var(--surface); }
+.backup-status.is-good { border-left-color: var(--good); }
+.backup-status.is-bad { border-left-color: var(--bad); background: var(--bad-tint); }
+.backup-status.is-none { border-left-color: var(--warn-fill); }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.backup-schedule { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem 1rem; }
+.backup-schedule label:not(.check) { margin: 0; }
+.backup-schedule input[type="time"] { width: 8.5rem; }
+.backup-list td { vertical-align: middle; }
+.backup-row-actions { white-space: nowrap; text-align: right; }
+.backup-help p { margin: 0.5rem 0; max-width: 72ch; }
+.backup-help pre { white-space: pre-wrap; word-break: break-all; background: var(--well); color: var(--on-vault); padding: 0.6rem 0.8rem; font-size: 0.82rem; }
+.backup-row-actions a.button { border-color: transparent; background: transparent; min-height: 32px; padding: 0 0.55rem; font-size: var(--step--1); font-weight: 700; color: var(--gold); box-shadow: none; }
+:root[data-theme="dark"] .backup-row-actions a.button { color: var(--champagne); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .backup-row-actions a.button { color: var(--champagne); } }

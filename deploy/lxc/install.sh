@@ -82,7 +82,7 @@ fi
 
 say "Creating the coinvault user and folders"
 id coinvault >/dev/null 2>&1 || useradd --system --home-dir $APP_ROOT --shell /usr/sbin/nologin coinvault
-install -d -o coinvault -g coinvault -m 0750 "$DATA_DIR" "$DATA_DIR/media"
+install -d -o coinvault -g coinvault -m 0750 "$DATA_DIR" "$DATA_DIR/media" "$DATA_DIR/backups"
 install -d -o root -g coinvault -m 0750 "$ENV_DIR"
 install -d -m 0755 "$APP_ROOT"
 

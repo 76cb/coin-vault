@@ -524,6 +524,31 @@ export interface LibraryFile {
   waiting_upload: boolean;
 }
 
+export interface BackupEntry {
+  name: string;
+  created_at: string;
+  reason: "nightly" | "manual" | string;
+  counts: { items?: number; photos?: number; documents?: number; valuations?: number; users?: number };
+  files: number;
+  database_bytes: number;
+  media_bytes: number;
+  new_files: number;
+  verified: boolean;
+  seconds: number | null;
+  download_bytes: number;
+}
+
+export interface BackupStatus {
+  enabled: boolean;
+  time: string;
+  timezone: string;
+  folder: string;
+  free_bytes: number | null;
+  next_run: string | null;
+  last: { at: string | null; ok: boolean | null; name: string | null; error: string | null } | null;
+  backups: BackupEntry[];
+}
+
 /** A PCGS cert number on its own ("12345678", "cert #12345678", "PCGS 12345678"), or null. */
 export function certNumber(text: string): string | null {
   const m = text.trim().match(/^(?:pcgs\s*)?(?:cert(?:ificate)?\s*(?:#|no\.?|number)?\s*)?#?\s*(\d{6,10})$/i);
@@ -612,6 +637,11 @@ export const api = {
   reorderPhotos: (itemId: number, photo_ids: number[]) =>
     request<Photo[]>("PUT", `${A}/items/${itemId}/photos/order`, { photo_ids }),
   setCover: (itemId: number, photo_id: number) => request<void>("PUT", `${A}/items/${itemId}/cover`, { photo_id }),
+  backups: () => request<BackupStatus>("GET", `${A}/backups`),
+  backupNow: () => request<BackupEntry>("POST", `${A}/backups`),
+  backupSettings: (body: { enabled: boolean; time: string }) => request<BackupStatus>("PUT", `${A}/backups/settings`, body),
+  deleteBackup: (name: string) => request<void>("DELETE", `${A}/backups/${encodeURIComponent(name)}`),
+  backupDownloadUrl: (name: string) => `${A}/backups/${encodeURIComponent(name)}/download`,
   library: (show: "all" | "on_items" | "not_on_items", page = 1, perPage = 60) =>
     request<{ total: number; files: LibraryFile[] }>("GET", `${A}/library?${new URLSearchParams({ show, page: String(page), per_page: String(perPage) })}`),
   deleteFromLibrary: (sha256s: string[]) =>

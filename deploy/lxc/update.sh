@@ -2,8 +2,9 @@
 # Update an LXC install of Coin Vault to the latest commit on its branch.
 # Take an LXC snapshot first (see README, "Updating").
 #
-#     /opt/coinvault/app/deploy/lxc/update.sh            # pull, rebuild, migrate, restart
+#     /opt/coinvault/app/deploy/lxc/update.sh            # pull, back up, rebuild, migrate, restart
 #     /opt/coinvault/app/deploy/lxc/update.sh --no-pull  # rebuild from files already in place
+#     SKIP_BACKUP=1 .../update.sh                        # don't make the pre-update backup
 set -euo pipefail
 
 APP_DIR=/opt/coinvault/app
@@ -48,6 +49,15 @@ chmod -R g+rX /var/lib/coinvault/media
 
 echo "==> Updating the backend"
 "$VENV/bin/pip" install -q --upgrade -e "$APP_DIR/backend"
+
+if [[ "${SKIP_BACKUP:-}" != "1" ]]; then
+  echo "==> Backing up before the update (restore.sh puts it back if needed)"
+  install -d -o coinvault -g coinvault -m 0750 /var/lib/coinvault/backups
+  if ! (cd backend && as_app "$VENV/bin/python" -m app.cli backup); then
+    echo "The pre-update backup failed, so nothing was changed. Fix it, or run with SKIP_BACKUP=1." >&2
+    exit 1
+  fi
+fi
 
 echo "==> Rebuilding the frontend"
 (cd frontend && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent)

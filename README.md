@@ -10,7 +10,7 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 | --- | --- | --- |
 | 1 | Sign-in, items, photos, documents, bulk photo upload | Done |
 | 2 | Spot prices, melt value, dashboard | Done |
-| 3 | Valuation history, exports, backups | Next |
+| 3 | Valuation history, exports, backups | Backups done; value history and exports next |
 | 4 | Market values (SoldComps, Numista, PCGS, manual), quota manager | Mostly done: PCGS by coin number and barcode, and scheduled price-guide refresh, to come |
 | 5 | Local AI identification and grading (optional) | Planned |
 
@@ -160,9 +160,27 @@ Then inside the container:
 ```sh
 /opt/coinvault/app/deploy/lxc/update.sh
 ```
-It pulls the latest code, rebuilds, migrates the database and restarts the service. It also adds `CV_ENCRYPTION_KEY` to the env file if it's missing (installs from before Milestone 2). To roll back, run `pct rollback <vmid> <snapshot-name>` on the host.
+It pulls the latest code, backs up (see below), rebuilds, migrates the database and restarts the service. If the backup fails it stops before changing anything (`SKIP_BACKUP=1` skips it). It also adds `CV_ENCRYPTION_KEY` to the env file if it's missing (installs from before Milestone 2). To roll back, run `pct rollback <vmid> <snapshot-name>` on the host, or restore the pre-update backup.
 
-Docker Compose, the GPU container for the AI service, encrypted backups and a Caddy HTTPS example arrive in later milestones.
+### Backups and restore
+
+Coin Vault backs itself up every night at 03:15 (change the time, or turn it off, in Settings, Backups). An update backs up first too, and Settings has **Back up now**.
+
+- **What's in a backup:** the whole database at that moment, and every photo, document and display copy. Photos are stored once and shared by all backups, so a nightly backup only adds what's new. Each backup is checked after it's made: the database copy is read back, and every listed file is confirmed present and complete.
+- **Where:** `/var/lib/coinvault/backups` (set `CV_BACKUP_DIR` to use another folder, such as a mounted NAS or second disk).
+- **How many:** the newest three, one a day for a week, one a week for a month, and one a month for a year. Files no remaining backup lists are removed.
+- **Not included, on purpose:** `/etc/coinvault/coinvault.env`, which holds the database password and `CV_ENCRYPTION_KEY`. Keep a copy of it somewhere safe. Without it, a restore still brings back the whole collection; only saved provider API keys need typing in again.
+- **Keep one off the server:** the backup folder is on the same disk as the collection. In Settings, **Download** gives any backup as one `.tar` (database and every file) to keep elsewhere.
+
+To restore, inside the container (from the Proxmox host, put `pct exec <vmid> --` in front):
+```sh
+/opt/coinvault/app/deploy/lxc/restore.sh                       # list the backups
+/opt/coinvault/app/deploy/lxc/restore.sh 2026-10-31T071500Z    # put one back
+/opt/coinvault/app/deploy/lxc/restore.sh /root/coinvault-backup-2026-10-31T071500Z.tar   # or a downloaded copy
+```
+It asks before going ahead, backs up the current state first (so a restore can be undone), stops the service, replaces the database, copies back any missing files, brings an older backup's database up to the current version, and starts the service again. The same steps are `python -m app.cli backup`, `list-backups` and `restore` for other installs; the test suite backs up, damages and restores a collection on SQLite and PostgreSQL, including from a downloaded `.tar`.
+
+Docker Compose, the GPU container for the AI service and a Caddy HTTPS example arrive in later milestones.
 
 ## Configuration
 
@@ -178,9 +196,11 @@ All settings are environment variables prefixed `CV_`; see [`.env.example`](.env
 | `CV_USE_X_ACCEL` | `false` | `true` when nginx serves protected files (the LXC install sets this) |
 | `CV_ENCRYPTION_KEY` | none | Encrypts provider API keys; the installer and updater generate it |
 | `CV_SCHEDULER_ENABLED` | `true` | Background price polling and the daily usage sync |
-| `CV_TIMEZONE` | `America/New_York` | Timezone for market hours |
+| `CV_TIMEZONE` | `America/New_York` | Timezone for market hours and the nightly backup |
+| `CV_BACKUP_DIR` | `backups` next to the media folder | Where backups are kept |
+| `CV_PG_BIN` | from `PATH` | Folder with `pg_dump` and `pg_restore` matching the PostgreSQL server |
 
-**Back up `CV_ENCRYPTION_KEY`** along with the database (it's in `/etc/coinvault/coinvault.env`). Without it, saved API keys can't be decrypted and you'd have to enter them again; nothing else is lost.
+**Keep a copy of `CV_ENCRYPTION_KEY`** (it's in `/etc/coinvault/coinvault.env`; backups leave that file out). Without it, saved API keys can't be decrypted and you'd have to enter them again; nothing else is lost.
 
 Poll interval, stale threshold, weekend pause and currency are set in **Settings → Spot prices**.
 
@@ -232,7 +252,7 @@ Tokens can do only what their scopes allow. Writes with a token don't need the C
 - **Resolution check uses the whole photo.** It looks at the photo's shorter side, not the coin's diameter, because auto-cropping to the coin isn't implemented yet.
 - **Discarded uploads keep their files.** A discarded group stays on disk so nothing you photographed is lost. There's no "empty the bin" action for them yet.
 - **Login throttling resets on restart.** The failed-login counter is kept in memory, which suits the single-process service.
-- **Market values aren't refreshed automatically.** They're fetched or entered when you choose to, and dated so you can see their age. Exports, valuation history and backups come in Milestone 3.
+- **Market values aren't refreshed automatically.** They're fetched or entered when you choose to, and dated so you can see their age. Exports and valuation history come next in Milestone 3.
 - **Sold listings in another currency are left out**, not converted.
 - **Purchase prices aren't converted between currencies.** Changing the display currency changes spot prices and melt values, not what you paid.
 - **The holdings chart uses today's holdings.** It shows what your current metal would have been worth at past prices, not what you held on each date. Valuation history arrives in Milestone 3.

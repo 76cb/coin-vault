@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     timezone: str = "America/New_York"
     http_timeout_seconds: float = 15.0
 
+    # Backups: the folder (default: "backups" next to the media folder, /var/lib/coinvault/backups on the LXC).
+    # Point it at a mounted NAS or second disk to keep backups off the container's own disk.
+    backup_dir: Path | None = None
+    # Folder of pg_dump / pg_restore matching the server (default: whatever is on PATH).
+    pg_bin: Path | None = None
+
     # Duplicate detection threshold (pHash Hamming distance)
     phash_duplicate_distance: int = Field(default=6, ge=0, le=64)
 

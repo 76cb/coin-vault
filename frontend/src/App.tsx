@@ -71,7 +71,7 @@ export default function App() {
           <Route path="/items/:id" element={<ItemPage />} />
           <Route path="/photos" element={<Photos />} />
           <Route path="/upload" element={<Upload />} />
-          <Route path="/settings" element={<Settings user={me.data.user.username} />} />
+          <Route path="/settings" element={<Settings user={me.data.user.username} admin={me.data.user.is_admin} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

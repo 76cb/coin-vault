@@ -18,6 +18,8 @@ SYSTEM_DEFAULTS: dict[str, object] = {
     "spot_poll_minutes": 15,
     "spot_stale_minutes": 30,
     "spot_pause_weekends": True,
+    "backup_enabled": True,
+    "backup_time": "03:15",  # local time (CV_TIMEZONE)
 }
 
 

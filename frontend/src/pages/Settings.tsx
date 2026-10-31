@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { api, ApiToken } from "../api";
+import Backups from "../components/Backups";
 import { PriceSettings, Providers } from "../components/Providers";
 import { useThemeChoice } from "../components/ThemeToggle";
 import { getPhotoFit, PhotoFit, setPhotoFit, ThemeChoice } from "../theme";
@@ -13,7 +14,7 @@ const SCOPES: [string, string][] = [
   ["export", "Export data"],
 ];
 
-export default function Settings({ user }: { user: string }) {
+export default function Settings({ user, admin }: { user: string; admin: boolean }) {
   return (
     <>
       <div className="page-head">
@@ -25,6 +26,7 @@ export default function Settings({ user }: { user: string }) {
         <Providers />
         <Locations />
         <Tags />
+        {admin && <Backups />}
         <Tokens />
         <Password user={user} />
       </div>
