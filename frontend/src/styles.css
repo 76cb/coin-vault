@@ -766,14 +766,14 @@ table.figures { border-collapse: collapse; width: 100%; font-size: var(--step--1
 
 /* selecting several photos to delete */
 .select-bar { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; padding: 0.6rem 0.9rem; margin-bottom: 1rem; background: var(--surface); border: 1px solid var(--hairline); border-top: 2px solid var(--champagne); }
-.select-bar .danger-solid { margin-left: auto; }
+.select-bar .select-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.5rem; }
 button.danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }
 button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--danger); }
 .head-actions button.on { background: var(--primary-bg); color: var(--primary-ink); }
 .library-tile { position: relative; }
 .library-tick { position: absolute; top: 6px; left: 6px; z-index: 1; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; background: rgba(8, 13, 22, 0.45); color: #fff; display: grid; place-items: center; font-size: 0.85rem; font-weight: 800; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
-.library-tick.on { background: var(--danger); border-color: var(--danger); }
-.library-tile.is-ticking.is-selected { outline-color: var(--danger); border-color: var(--danger); }
+.library-tick.on { background: var(--champagne); border-color: var(--champagne); color: var(--vault); font-variant-numeric: tabular-nums; }
+.library-tile.is-ticking.is-selected { outline-color: var(--champagne); border-color: var(--champagne); }
 .photo-detail-foot { display: flex; justify-content: space-between; gap: 0.5rem; }
 .valuation-actions { white-space: nowrap; text-align: right; } .valuation-actions button + button { margin-left: 0.25rem; }
 
@@ -866,4 +866,20 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
   .report-photos img { width: 60px; height: 60px; }
   .refetching { opacity: 1 !important; }
   a { color: inherit; text-decoration: none; }
+}
+
+/* --- Add item: photos carried over from the Photos page ------------------------------------- */
+.chosen-photos { margin-bottom: 1.5rem; }
+.chosen-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.5rem 1rem; }
+.chosen-head h2 { margin: 0 0 0.75rem; font-size: var(--step-0); }
+.chosen-list { list-style: none; margin: 0 0 0.5rem; padding: 0; display: flex; flex-wrap: wrap; gap: 1rem; }
+.chosen-list li { width: 150px; display: flex; flex-direction: column; gap: 0.4rem; }
+.chosen-list img { width: 150px; height: 150px; object-fit: cover; background: var(--well); border-radius: var(--r); }
+.chosen-list select { width: 100%; }
+.chosen-tools { display: flex; justify-content: space-between; }
+.chosen-tools button { min-height: 36px; padding-inline: 0.4rem; }
+@media (max-width: 520px) {
+  .chosen-list { gap: 0.75rem; }
+  .chosen-list li, .chosen-list img { width: calc(50vw - 2rem); }
+  .chosen-list img { height: calc(50vw - 2rem); }
 }

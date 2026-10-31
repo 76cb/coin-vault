@@ -578,6 +578,14 @@ export interface LibraryFile {
   created_at: string;
   items: { item_id: number; title: string; photo_id: number; role: PhotoRole; is_cover: boolean }[];
   waiting_upload: boolean;
+  suggested_role: PhotoRole | null; // the side a bulk upload guessed from the file name
+}
+/** Photos chosen on the Photos page for a new item, carried to Add item. */
+export interface PickedPhoto {
+  sha256: string;
+  thumb: string;
+  filename: string | null;
+  role: PhotoRole;
 }
 
 export interface BackupEntry {
@@ -673,6 +681,8 @@ export const api = {
   items: (params: Record<string, string>) => request<ItemPage>("GET", `${A}/items?${new URLSearchParams(params)}`),
   item: (id: number) => request<Item>("GET", `${A}/items/${id}`),
   createItem: (body: unknown) => request<Item>("POST", `${A}/items`, body),
+  createItemFromLibrary: (item: unknown, photos: { sha256: string; role: PhotoRole }[]) =>
+    request<Item>("POST", `${A}/library/create-item`, { item, photos }),
   updateItem: (id: number, version: number, body: unknown) =>
     request<Item>("PATCH", `${A}/items/${id}`, body, { "If-Match": String(version) }),
   deleteItem: (id: number) => request<void>("DELETE", `${A}/items/${id}`),

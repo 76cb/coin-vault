@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import Principal, read_items, write_items
-from app.models import Item, Photo, UploadGroup
+from app.models import Item, Photo, UploadGroup, utcnow
 from app.models import UploadFile as UploadFileRow
 from app.routers.photos import _drop_edited, _serve
-from app.schemas import PhotoOut, PhotoRole, _Base
+from app.schemas import ItemCreate, ItemOut, PhotoOut, PhotoRole, _Base
 from app.services import items as item_svc
 from app.services import media, photo_edit
 from app.services.images import StoredImage
@@ -42,6 +42,7 @@ class LibraryFile(BaseModel):
     created_at: dt.datetime
     items: list[LibraryUse]
     waiting_upload: bool  # in a bulk upload that hasn't been filed yet
+    suggested_role: str | None = None  # the side the bulk upload guessed (obverse, reverse…), for a new item
 
 
 class LibraryOut(BaseModel):
@@ -104,6 +105,7 @@ def library(
         f["filename"] = f["filename"] or u.original_filename
         if status == "pending":
             f["waiting_upload"] = True
+            f["suggested_role"] = u.suggested_role
     out = [LibraryFile(**{k: v for k, v in f.items() if not k.startswith("_")}) for f in files.values()]
     if show == "on_items":
         out = [f for f in out if f.items]
@@ -134,28 +136,81 @@ class FromLibraryIn(_Base):
     make_cover: bool = False
 
 
-@router.post("/items/{item_id}/photos/from-library", response_model=PhotoOut, status_code=201)
-def add_from_library(item_id: int, body: FromLibraryIn, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
-    """Put an image you already uploaded on this item. Nothing is uploaded or copied; the file is shared."""
-    item = item_svc.get_item(db, principal, item_id)
-    if any(p.sha256 == body.sha256 for p in item.photos):
-        raise HTTPException(409, "That photo is already on this item")
-    photo, upload = _owned(db, principal.owner_id, body.sha256)
+def _stored(db: Session, owner_id: int, sha: str) -> tuple[StoredImage, str | None]:
+    photo, upload = _owned(db, owner_id, sha)
     src = photo or upload
     if src is None:
         raise HTTPException(404, "That photo isn't in your library")
     width, height = photo_edit.display_size(src.storage_key) if photo is not None and photo.edits else (src.width, src.height)
     stored = StoredImage(
         storage_key=src.storage_key, sha256=src.sha256, mime=src.mime, width=width, height=height, bytes=src.bytes,
-        phash=src.phash, quality=dict(src.quality or {}),  # type: ignore[arg-type]
+        phash=src.phash or "", quality=dict(src.quality or {}),  # type: ignore[arg-type]
     )
-    new = media.add_photo(db, item, stored, body.role, src.original_filename, media.next_sort_order(db, item.id))
+    return stored, src.original_filename
+
+
+def _settle_uploads(db: Session, owner_id: int, shas: set[str], item: Item) -> None:
+    """Photos now on an item leave the bulk-upload queue; a group left empty counts as filed onto that item."""
+    rows = list(db.scalars(
+        select(UploadFileRow).join(UploadGroup, UploadGroup.id == UploadFileRow.group_id)
+        .where(UploadFileRow.owner_id == owner_id, UploadFileRow.sha256.in_(shas), UploadGroup.status == "pending")
+    ))
+    groups = {r.group_id for r in rows}
+    for r in rows:
+        db.delete(r)  # the file stays: the item's photo uses it
+    db.flush()
+    for gid in groups:
+        g = db.get(UploadGroup, gid)
+        if g is None:
+            continue
+        db.refresh(g, ["files"])
+        if not g.files:
+            g.status = "attached"
+            g.resulting_item_id = item.id
+            g.resolved_at = utcnow()
+
+
+@router.post("/items/{item_id}/photos/from-library", response_model=PhotoOut, status_code=201)
+def add_from_library(item_id: int, body: FromLibraryIn, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+    """Put an image you already uploaded on this item. Nothing is uploaded or copied; the file is shared."""
+    item = item_svc.get_item(db, principal, item_id)
+    if any(p.sha256 == body.sha256 for p in item.photos):
+        raise HTTPException(409, "That photo is already on this item")
+    stored, filename = _stored(db, principal.owner_id, body.sha256)
+    new = media.add_photo(db, item, stored, body.role, filename, media.next_sort_order(db, item.id))
     if body.make_cover:
         item.cover_photo_id = new.id
     else:
         media.ensure_cover(db, item)
+    _settle_uploads(db, principal.owner_id, {body.sha256}, item)
     db.commit()
     return item_svc.photo_out(new)
+
+
+class LibraryPhotoIn(_Base):
+    sha256: str
+    role: PhotoRole = "other"
+
+
+class CreateFromLibraryIn(_Base):
+    item: ItemCreate
+    photos: list[LibraryPhotoIn] = Field(min_length=1, max_length=24)
+
+
+@router.post("/library/create-item", response_model=ItemOut, status_code=201)
+def create_item_from_library(body: CreateFromLibraryIn, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+    """A new item with photos you've already uploaded, in the order given. The obverse (else the first) is the cover."""
+    shas = [p.sha256 for p in body.photos]
+    if len(set(shas)) != len(shas):
+        raise HTTPException(422, "The same photo is in the list twice")
+    found = [_stored(db, principal.owner_id, s) for s in shas]  # 404 before anything is created
+    item = item_svc.create_item(db, principal, body.item)
+    added = [media.add_photo(db, item, stored, p.role, filename, i) for i, (p, (stored, filename)) in enumerate(zip(body.photos, found))]
+    item.cover_photo_id = next((ph.id for ph in added if ph.role == "obverse"), added[0].id)
+    _settle_uploads(db, principal.owner_id, set(shas), item)
+    db.commit()
+    db.refresh(item)
+    return item_svc.item_out(db, item)
 
 
 class DeleteIn(_Base):

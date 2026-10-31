@@ -15,6 +15,7 @@ export default function PhotoLibrary({
   initialShow = "all",
   ticked,
   onFiles,
+  remember,
 }: {
   selected: string | null;
   onSelect: (f: LibraryFile) => void;
@@ -22,8 +23,25 @@ export default function PhotoLibrary({
   onFiles?: (files: LibraryFile[]) => void; // the photos on the current page
   exclude?: string[]; // files already on the item being edited
   initialShow?: LibraryShow;
+  remember?: string; // keep the All / On items / Not on an item choice for this browser tab under this name
 }) {
-  const [show, setShow] = useState<LibraryShow>(initialShow);
+  const [show, setShowState] = useState<LibraryShow>(() => {
+    try {
+      const v = remember ? sessionStorage.getItem(`cv-library-${remember}`) : null;
+      return v && SHOWS.some(([k]) => k === v) ? (v as LibraryShow) : initialShow;
+    } catch {
+      return initialShow;
+    }
+  });
+  const setShow = (v: LibraryShow) => {
+    setShowState(v);
+    try {
+      if (remember) sessionStorage.setItem(`cv-library-${remember}`, v);
+    } catch {
+      /* not remembered */
+    }
+  };
+  const order = ticked ? [...ticked] : [];
   const [page, setPage] = useState(1);
   const q = useQuery({ queryKey: ["library", show, page], queryFn: () => api.library(show, page, PER_PAGE) });
   const pages = q.data ? Math.max(1, Math.ceil(q.data.total / PER_PAGE)) : 1;
@@ -61,7 +79,7 @@ export default function PhotoLibrary({
                   onClick={() => onSelect(f)}
                   title={already ? "Already on this item" : f.filename ?? undefined}
                 >
-                  {ticked && <span className={`library-tick${on ? " on" : ""}`} aria-hidden>{on ? "✓" : ""}</span>}
+                  {ticked && <span className={`library-tick${on ? " on" : ""}`} aria-hidden>{on ? order.indexOf(f.sha256) + 1 : ""}</span>}
                   <img src={f.urls.thumb} alt={f.filename ?? "Photo"} loading="lazy" />
                   <span className="library-caption">
                     {already ? "On this item" : f.items.length ? f.items.map((i) => i.title).join(", ") : f.waiting_upload ? "Waiting in uploads" : "Not on an item"}

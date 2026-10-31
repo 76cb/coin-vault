@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
-import { api, LibraryFile, PhotoRole, ROLE_LABELS } from "../api";
+import { api, LibraryFile, PhotoRole, PickedPhoto, ROLE_LABELS } from "../api";
 import PhotoLibrary from "../components/PhotoLibrary";
 
 /** Deletes photos everywhere after saying exactly what goes. Returns false if the owner said no. */
@@ -16,9 +16,25 @@ async function confirmDelete(files: LibraryFile[]): Promise<boolean> {
   return window.confirm(`Delete ${what} for good?${where}\n\nThis can't be undone.`);
 }
 
+const MAX_PHOTOS = 24;
+
+/** Each photo's side for a new item: the sides the upload guessed from file names when they agree, else front, back, then other in the order picked. */
+function pickRoles(files: LibraryFile[]): PickedPhoto[] {
+  const guessed = files.map((f) => f.suggested_role ?? f.items[0]?.role ?? null);
+  const sides = guessed.filter((r) => r === "obverse" || r === "reverse");
+  const useGuess = sides.length > 0 && new Set(sides).size === sides.length;
+  return files.map((f, i) => ({
+    sha256: f.sha256,
+    thumb: f.urls.thumb,
+    filename: f.filename,
+    role: useGuess ? (guessed[i] ?? "other") : i === 0 ? "obverse" : i === 1 ? "reverse" : "other",
+  }));
+}
+
 /** All your photos in one place: see where each is used, put any of them on an item, or delete them. */
 export default function Photos() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [file, setFile] = useState<LibraryFile | null>(null);
   const [ticking, setTicking] = useState(false);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
@@ -60,6 +76,11 @@ export default function Photos() {
     }
   };
 
+  const createItem = (shas: string[]) => {
+    const files = shas.map((s) => known.current.get(s)).filter(Boolean) as LibraryFile[];
+    navigate("/items/new", { state: { photos: pickRoles(files) } });
+  };
+
   const tick = (f: LibraryFile) =>
     setTicked((t) => {
       const n = new Set(t);
@@ -74,32 +95,48 @@ export default function Photos() {
         <h1>Photos</h1>
         <div className="head-actions">
           <button type="button" className={ticking ? "on" : ""} aria-pressed={ticking} onClick={() => { setTicking(!ticking); setTicked(new Set()); setFile(null); setNote(null); }}>
-            {ticking ? "Done selecting" : "Select several"}
+            {ticking ? "Done selecting" : "Select photos"}
           </button>
         </div>
       </div>
-      <p className="muted lede">Every photo you've uploaded, on items or not. Choose one to see where it's used, put it on an item, or delete it.</p>
+      <p className="muted lede">
+        Every photo you've uploaded, on items or not. Choose one to see where it's used, put it on an item, or delete it. To make a new item,
+        press <strong>Select photos</strong>, pick its photos (front first, then back), and press <strong>Create an item</strong>.
+      </p>
       {ticking && (
         <div className="select-bar" role="region" aria-label="Selected photos">
           <span className="tabular">{ticked.size} selected</span>
           <button type="button" className="ghost small" onClick={() => setTicked(new Set([...ticked, ...pageFiles.map((f) => f.sha256)]))}>Select all on this page</button>
           {ticked.size > 0 && <button type="button" className="ghost small" onClick={() => setTicked(new Set())}>Clear</button>}
-          <button type="button" className="danger-solid" disabled={!ticked.size || busy} onClick={() => remove([...ticked])}>
-            {busy ? "Deleting…" : `Delete ${ticked.size || ""} ${ticked.size === 1 ? "photo" : "photos"}`.replace("  ", " ")}
-          </button>
+          <div className="select-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={!ticked.size || ticked.size > MAX_PHOTOS || busy}
+              title={ticked.size > MAX_PHOTOS ? `An item can start with up to ${MAX_PHOTOS} photos` : undefined}
+              onClick={() => createItem([...ticked])}
+            >
+              Create an item{ticked.size ? ` from ${ticked.size === 1 ? "this photo" : `these ${ticked.size}`}` : ""}
+            </button>
+            <button type="button" className="danger-solid" disabled={!ticked.size || busy} onClick={() => remove([...ticked])}>
+              {busy ? "Deleting…" : `Delete ${ticked.size || ""} ${ticked.size === 1 ? "photo" : "photos"}`.replace("  ", " ")}
+            </button>
+          </div>
         </div>
       )}
       {error && <p className="error" role="alert">{error}</p>}
       {note && <p className="success" role="status">{note}</p>}
       <div className={`photos-layout${file && !ticking ? " has-detail" : ""}`}>
-        <PhotoLibrary selected={file?.sha256 ?? null} onSelect={ticking ? tick : setFile} ticked={ticking ? ticked : undefined} onFiles={onFiles} />
-        {file && !ticking && <PhotoDetail key={file.sha256} file={file} onClose={() => setFile(null)} onDelete={() => remove([file.sha256])} busy={busy} />}
+        <PhotoLibrary selected={file?.sha256 ?? null} onSelect={ticking ? tick : setFile} ticked={ticking ? ticked : undefined} onFiles={onFiles} remember="photos-page" />
+        {file && !ticking && (
+          <PhotoDetail key={file.sha256} file={file} onClose={() => setFile(null)} onDelete={() => remove([file.sha256])} onCreate={() => createItem([file.sha256])} busy={busy} />
+        )}
       </div>
     </>
   );
 }
 
-function PhotoDetail({ file, onClose, onDelete, busy: deleting }: { file: LibraryFile; onClose: () => void; onDelete: () => void; busy: boolean }) {
+function PhotoDetail({ file, onClose, onDelete, onCreate, busy: deleting }: { file: LibraryFile; onClose: () => void; onDelete: () => void; onCreate: () => void; busy: boolean }) {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [itemId, setItemId] = useState<number | null>(null);
@@ -156,6 +193,9 @@ function PhotoDetail({ file, onClose, onDelete, busy: deleting }: { file: Librar
       </div>
 
       <div className="photo-put">
+        <h2>Make a new item from it</h2>
+        <button type="button" onClick={onCreate}>Create an item with this photo</button>
+        <p className="hint">To add its other side too, use <strong>Select photos</strong> and pick both.</p>
         <h2>Put it on an item</h2>
         <label>
           Find the item

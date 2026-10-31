@@ -99,3 +99,43 @@ def test_delete_photos_everywhere(api, images):
     groups = api.get("/api/v1/uploads/groups").json()
     assert all(g["id"] != loose["groups"][0]["id"] for g in groups if g.get("status") == "pending")
     assert api.post("/api/v1/library/delete", json={"sha256s": [x]}).status_code == 404
+
+
+def test_create_an_item_from_uploaded_photos(api, images):
+    """Pick photos waiting in uploads and make one item from them; they leave the upload queue."""
+    r = api.post("/api/v1/uploads", files=[
+        ("files", ("q7_obv.jpg", jpg(images, 61), "image/jpeg")),
+        ("files", ("q7_rev.jpg", jpg(images, 62), "image/jpeg")),
+        ("files", ("q8_obv.jpg", jpg(images, 63), "image/jpeg")),
+        ("files", ("q8_rev.jpg", jpg(images, 64), "image/jpeg")),
+    ])
+    assert r.status_code == 201, r.text
+    files = {f["filename"]: f for f in api.get("/api/v1/library", params={"show": "not_on_items"}).json()["files"]}
+    assert files["q7_obv.jpg"]["suggested_role"] == "obverse" and files["q7_rev.jpg"]["suggested_role"] == "reverse"
+    # one photo from each pair, reverse first in the list: the obverse is still the cover
+    body = {"item": {"item_type": "coin", "title": "1964 Washington quarter"},
+            "photos": [{"sha256": files["q8_rev.jpg"]["sha256"], "role": "reverse"}, {"sha256": files["q7_obv.jpg"]["sha256"], "role": "obverse"}]}
+    r = api.post("/api/v1/library/create-item", json=body)
+    assert r.status_code == 201, r.text
+    item = r.json()
+    assert item["title"] == "1964 Washington quarter" and [p["role"] for p in item["photos"]] == ["reverse", "obverse"]
+    assert item["cover_photo_id"] == item["photos"][1]["id"]
+    lib = {f["filename"]: f for f in api.get("/api/v1/library").json()["files"]}
+    assert lib["q7_obv.jpg"]["items"][0]["item_id"] == item["id"] and not lib["q7_obv.jpg"]["waiting_upload"]
+    assert lib["q7_rev.jpg"]["waiting_upload"]  # its partner is still waiting
+    groups = api.get("/api/v1/uploads/groups").json()
+    waiting = sorted(f["original_filename"] for g in groups for f in g["files"])
+    assert waiting == ["q7_rev.jpg", "q8_obv.jpg"]
+    # putting the rest on the item empties both groups out of the queue
+    for name in ("q7_rev.jpg", "q8_obv.jpg"):
+        assert api.post(f"/api/v1/items/{item['id']}/photos/from-library", json={"sha256": lib[name]["sha256"]}).status_code == 201
+    assert api.get("/api/v1/uploads/groups").json() == []
+    assert api.get(api.get(f"/api/v1/items/{item['id']}").json()["photos"][0]["urls"]["original"]).status_code == 200
+
+
+def test_create_from_library_checks_first(api, images):
+    before = api.get("/api/v1/items").json()["total"]
+    bad = {"item": {"item_type": "coin", "title": "Nope"}, "photos": [{"sha256": "0" * 64}]}
+    assert api.post("/api/v1/library/create-item", json=bad).status_code == 404
+    assert api.get("/api/v1/items").json()["total"] == before  # nothing half-made
+    assert api.post("/api/v1/library/create-item", json={"item": {"item_type": "coin", "title": "x"}, "photos": []}).status_code == 422
