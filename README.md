@@ -12,7 +12,7 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 | 2 | Spot prices, melt value, dashboard | Done |
 | 3 | Valuation history, exports, backups | Done |
 | 4 | Market values (SoldComps, Numista, PCGS, manual), quota manager | Done |
-| 5 | Local AI identification and grading (optional) | Planned |
+| 5 | Local AI identification and grading (optional) | Done |
 
 ## What works now
 
@@ -64,6 +64,11 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 - **PCGS cert lookup:** type or paste a PCGS cert number into the quick add box and press Look up. PCGS's name, grade, designations, cert, PCGS number and metal weight fill the form, and you can save its price guide value as the market value. It uses the [PCGS Public API](https://www.pcgs.com/publicapi) with your own access token (free, 1,000 calls a day; the app stops at a cap you set, 900 by default).
 - **PCGS by number and grade, or by barcode:** type a PCGS number and grade ("9801 MS65", "PCGS #7126 64+") into the quick add box, or use Look up at PCGS for a PCGS or NGC holder's barcode (typed, scanned with a barcode scanner, or read from a photo of the label on the server). By number and grade works for any coin, raw or graded by anyone, and gives the PCGS price guide value for that grade. On an item with a PCGS number and a grade but no PCGS cert (an NGC slab, say), the PCGS price guide button looks it up the same way.
 - **Weekly value updates** (Settings, admins): once a week (Sunday 05:40 by default, changeable) the PCGS price guide values and Numista estimates you've fetched are fetched again. A changed value is saved as a new dated market value, so the value history shows it; an unchanged one is marked as checked. Only items that already have a value from that source are followed, so no lookups are spent on items you haven't asked about. A value you chose with Use this stays chosen. Each source stops for the week if its cap is reached. Update now runs it straight away.
+- **Photo AI** (optional; an admin sets it up in Settings, AI): a vision model running on your own network through [Ollama](https://ollama.com) looks at an item's photos. Photos go only to that server.
+  - **What is it?** On Add item (with photos chosen), on each bulk-upload group, and on an item's page, Identify from the photos reads the date, mint mark, denomination and design and fills the form the same way the quick add box does, metal content included. On an item it fills only what's empty; the title, prices and notes stay. On a bulk-upload group, Use this title fills the title, and Fill in all the details opens Add item with everything filled and the photos attached.
+  - **Holders:** in a slab, it reads the label (service, grade, cert number, PCGS number) and any barcode, and offers the PCGS lookup, whose details are the most reliable.
+  - **What grade?** On a raw coin's page, Suggest a grade gives a grade range (like VF20 to VF30) with what it saw: wear, surfaces, any problems that would make it a Details grade, and what other photos would help. It's a guess from photos, not a grade. Add to the item's notes keeps it, dated.
+  - **Pieces you already have:** each answer lists items you hold with the same year, design (or denomination) and mint mark, and any item that already has one of these photos.
 - **Dashboard:** total melt value, what you paid (known and estimated, with a count of items with no cost), gain on items that have both, and pure ounces by metal.
 - **Value history:** what the collection was worth on each day, over a month, three months, a year or everything, with a dashed line for what you'd paid. Each day counts what you held then (from the acquired date to the sale date) at that day's spot price and the market values you'd recorded by then, so today's point matches the dashboard. Filter by kind of item or metal.
 - **Export CSV** (Collection page): every item matching the page's filters, one row each, with every field: details, grade and cert, pure ounces per metal, melt, market and current values (and where the value came from), purchase and sale details, location and tags. Opens in Excel, Numbers or Google Sheets; text that looks like a formula is kept as text.
@@ -185,7 +190,23 @@ To restore, inside the container (from the Proxmox host, put `pct exec <vmid> --
 ```
 It asks before going ahead, backs up the current state first (so a restore can be undone), stops the service, replaces the database, copies back any missing files, brings an older backup's database up to the current version, and starts the service again. The same steps are `python -m app.cli backup`, `list-backups` and `restore` for other installs; the test suite backs up, damages and restores a collection on SQLite and PostgreSQL, including from a downloaded `.tar`.
 
-Docker Compose, the GPU container for the AI service and a Caddy HTTPS example arrive in later milestones.
+### Photo AI: Ollama on the GPU
+
+Photo AI needs an [Ollama](https://ollama.com) server with a vision model. On a Proxmox host with an NVIDIA card, `deploy/proxmox/ollama-lxc.sh` creates one in its own container, so Coin Vault's container stays as it is. The host's NVIDIA driver must already work (`nvidia-smi` shows the card). Run on the Proxmox host:
+```sh
+pct pull <coinvault-vmid> /opt/coinvault/app/deploy/proxmox/ollama-lxc.sh /root/ollama-lxc.sh
+bash /root/ollama-lxc.sh            # --dry-run shows what it would do
+```
+It creates a Debian container (16 GB RAM, 80 GB disk by default), passes the GPU through (Proxmox VE 8.1 or newer), installs the NVIDIA user-space libraries matching the host driver (no kernel module), installs Ollama listening on port 11434, and downloads `gemma4:26b` (about 17–19 GB, which fits a 24 GB card with room for photos; `--model gemma4:12b` is smaller and quicker). It checks the model runs on the GPU and prints the address.
+
+Then in Coin Vault, Settings, AI: enter `http://<ollama-container-ip>:11434`, press Check the server, choose the model and press Use this model. Only models that can see photos are offered.
+
+- **After updating the host's NVIDIA driver**, match it in the container: `bash /root/ollama-lxc.sh --update-driver <ollama-vmid>`. Until then CUDA fails and Ollama falls back to the CPU (slow).
+- **Ollama has no password.** Keep it on your private network, and don't forward port 11434.
+- **Another machine:** any Ollama server Coin Vault can reach works; it must listen on the network (`OLLAMA_HOST=0.0.0.0:11434`).
+- The first photo after a while takes longer while the model loads into the GPU; it then stays loaded for 30 minutes.
+
+Docker Compose and a Caddy HTTPS example arrive in later milestones.
 
 ## Configuration
 
@@ -258,6 +279,7 @@ Tokens can do only what their scopes allow. Writes with a token don't need the C
 - **Discarded uploads keep their files.** A discarded group stays on disk so nothing you photographed is lost. There's no "empty the bin" action for them yet.
 - **Login throttling resets on restart.** The failed-login counter is kept in memory, which suits the single-process service.
 - **Only PCGS and Numista values are refreshed automatically.** Sold-listing medians and your own figures stay as fetched or entered, dated so you can see their age; search sold listings again when you want a newer one.
+- **Photo AI can be wrong.** It can misread a worn date or a small mint mark, and a grade from photos is a rough guide: lighting hides wear, cleaning and hairlines. Its answers only fill the form; nothing is saved until you check and save. It doesn't find die varieties or errors.
 - **Sold listings in another currency are left out**, not converted.
 - **Purchase prices aren't converted between currencies.** Changing the display currency changes spot prices and melt values, not what you paid.
 - **Value history starts when spot prices do.** There's no record of spot prices from before the app was installed, so the value chart starts on the first day it has prices. Items with no acquired date count from the day they were added. The spot chart's "value of what you hold" view still uses today's holdings at past prices; the value history is the one that follows what you actually held.

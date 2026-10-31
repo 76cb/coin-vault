@@ -3,8 +3,9 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api, Item, ITEM_TYPE_LABELS, Metal, METAL_LABELS, money, ozt, ROLE_LABELS, RULE_LABELS, STATUS_LABELS } from "../api";
+import { AiGradeGuess, AiIdentify, useAiReady } from "../components/Ai";
 import Documents from "../components/Documents";
-import ItemForm from "../components/ItemForm";
+import ItemForm, { fillBlanks, FormState } from "../components/ItemForm";
 import MarketValue from "../components/MarketValue";
 import PhotoManager from "../components/PhotoManager";
 
@@ -45,6 +46,8 @@ export default function ItemPage() {
   const note = (useLocation().state as { note?: string } | null)?.note;
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const [editSeed, setEditSeed] = useState<{ n: number; defaults: Partial<FormState> } | null>(null);
+  const ai = useAiReady();
   const [showHistory, setShowHistory] = useState(false);
   const [active, setActive] = useState<number | null>(null);
   const item = useQuery({ queryKey: ["item", id], queryFn: () => api.item(id) });
@@ -56,6 +59,9 @@ export default function ItemPage() {
   const shown = it.photos.find((p) => p.id === active) ?? it.photos.find((p) => p.id === it.cover_photo_id) ?? it.photos[0];
   const details = Object.entries(it.details).filter(([k, v]) => k !== "attributes" && v !== null && v !== "" && v !== false);
   const attributes = (it.details.attributes ?? {}) as Record<string, string>;
+
+  const aiPhotos = it.photos.filter((p) => p.sha256).map((p) => ({ sha256: p.sha256!, role: p.role }));
+  const raw = (it.item_type === "coin" || it.item_type === "bullion") && it.condition?.grading !== "slabbed";
 
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: ["item", id] });
@@ -74,7 +80,7 @@ export default function ItemPage() {
             <button className="primary" onClick={async () => { await api.restoreItem(it.id); await refresh(); }}>Restore item</button>
           ) : (
             <>
-              <button onClick={() => setEditing((e) => !e)}>{editing ? "Close editor" : "Edit details"}</button>
+              <button onClick={() => { setEditSeed(null); setEditing((e) => !e); }}>{editing ? "Close editor" : "Edit details"}</button>
               <button
                 className="ghost danger"
                 onClick={async () => {
@@ -115,14 +121,17 @@ export default function ItemPage() {
         <div className="item-facts">
           {editing ? (
             <ItemForm
+              key={editSeed?.n ?? 0}
               item={it}
+              defaults={editSeed?.defaults}
               submitLabel="Save changes"
-              onCancel={() => setEditing(false)}
+              onCancel={() => { setEditing(false); setEditSeed(null); }}
               onSubmit={async (payload) => {
                 await api.updateItem(it.id, it.version, payload);
                 await qc.invalidateQueries({ queryKey: ["tags"] });
                 await refresh();
                 setEditing(false);
+                setEditSeed(null);
               }}
             />
           ) : (
@@ -197,6 +206,41 @@ export default function ItemPage() {
       {!it.deleted_at && (
         <div className="item-sections">
           {it.status !== "sold" && <MarketValue item={it} />}
+          {ai && aiPhotos.length > 0 && (
+            <section className="ai-section" aria-labelledby="ai-item-h">
+              <h2 id="ai-item-h">From the photos</h2>
+              <div className="ai-cols">
+                <div>
+                  <h3>What is it?</h3>
+                  <AiIdentify
+                    photos={aiPhotos}
+                    itemId={it.id}
+                    useLabel="Edit with these details"
+                    usedNote="The editor above has these details in the fields that were empty. Check them and save."
+                    intro={<p className="hint">Fills in only what this item doesn't have yet; its title, prices and notes stay.</p>}
+                    onUse={(defaults) => {
+                      setEditSeed({ n: Date.now(), defaults: fillBlanks(it, defaults) });
+                      setEditing(true);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                  />
+                </div>
+                {raw && (
+                  <div>
+                    <h3>What grade?</h3>
+                    <AiGradeGuess
+                      photos={aiPhotos}
+                      itemId={it.id}
+                      onNote={async (text) => {
+                        await api.updateItem(it.id, it.version, { notes: it.notes ? `${it.notes}\n\n${text}` : text });
+                        await refresh();
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
           <section>
             <h2>Photos</h2>
             <PhotoManager item={it} />

@@ -181,6 +181,28 @@ function fromItem(item?: Item, defaults?: Partial<FormState>): FormState {
   };
 }
 
+/** Starting values for editing an item: `add` only fills what the item doesn't have yet (empty details, no grade,
+ *  no metal), so its title, prices, notes and anything already recorded stay as they are. */
+export function fillBlanks(item: Item, add: Partial<FormState>): Partial<FormState> {
+  const cur = fromItem(item);
+  const recorded = Object.values(cur.details).some((v) => v !== "" && v !== false);
+  const out: Partial<FormState> = {};
+  const type = add.item_type && add.item_type !== cur.item_type && !recorded ? add.item_type : cur.item_type;
+  if (type !== cur.item_type) out.item_type = type;
+  const details = { ...(type === cur.item_type ? cur.details : {}) };
+  for (const [k, v] of Object.entries(add.details ?? {})) {
+    if (details[k] === undefined || details[k] === "") details[k] = v;
+  }
+  out.details = details;
+  if (cur.grading === "none" && add.grading && add.grading !== "none") {
+    for (const k of ["grading", "grading_service", "grade_text", "sheldon_grade", "designations", "details_reason", "cert_number"] as const) {
+      if (add[k] !== undefined) (out as Record<string, unknown>)[k] = add[k];
+    }
+  }
+  if (!cur.metals.length && add.metals?.length) out.metals = add.metals;
+  return out;
+}
+
 /** Turn what the title reader understood into starting values for the form. */
 export function defaultsFromDescription(d: Described): Partial<FormState> {
   const details: Record<string, Str | boolean> = {};
@@ -205,6 +227,7 @@ export function defaultsFromDescription(d: Described): Partial<FormState> {
     grading: c ? c.grading : "none",
     grading_service: c?.grading_service ?? "",
     grade_text: c?.grade_text ?? "",
+    cert_number: c?.cert_number ?? "",
     sheldon_grade: c?.sheldon_grade ? String(c.sheldon_grade) : "",
     designations: (c?.designations ?? []).join(", "),
     details_reason: c?.details_reason ?? "",

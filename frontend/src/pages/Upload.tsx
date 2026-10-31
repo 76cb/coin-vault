@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
-import { api, ITEM_TYPE_LABELS, ItemType, PhotoRole, ROLE_LABELS, UploadGroup, UploadResult } from "../api";
+import { AiPhotoRef, api, ITEM_TYPE_LABELS, ItemType, PhotoRole, PickedPhoto, ROLE_LABELS, UploadGroup, UploadResult } from "../api";
+import { AiIdentify, useAiReady } from "../components/Ai";
 import DropZone from "../components/DropZone";
 import ItemPicker from "../components/ItemPicker";
 import { DuplicateNote, QualityNote } from "../components/QualityNote";
@@ -112,6 +113,8 @@ function GroupCard({
   onSaved: (id: number, title: string) => void;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const ai = useAiReady();
   const [title, setTitle] = useState(group.pairing_rule === "pattern" || group.pairing_rule === "manual" ? group.label ?? "" : "");
   const [type, setType] = useState<ItemType>("coin");
   const [mode, setMode] = useState<"new" | "existing">("new");
@@ -132,6 +135,9 @@ function GroupCard({
   }
 
   const setRole = (fileId: number, role: PhotoRole) => run(() => api.patchGroup(group.id, { roles: { [fileId]: role } }));
+  const withSha = group.files.filter((f) => f.sha256);
+  const refs: AiPhotoRef[] = withSha.map((f) => ({ sha256: f.sha256!, role: f.role }));
+  const picked: PickedPhoto[] = withSha.map((f) => ({ sha256: f.sha256!, thumb: f.urls.thumb, filename: f.original_filename, role: f.role }));
 
   return (
     <li className={`group-card${selected ? " selected" : ""}`}>
@@ -160,6 +166,18 @@ function GroupCard({
           </figure>
         ))}
       </div>
+      {ai && mode === "new" && refs.length > 0 && (
+        <AiIdentify
+          key={refs.map((r) => r.sha256 + r.role).join()}
+          photos={refs}
+          extra={(r) => (
+            <div className="ai-actions">
+              <button type="button" className="primary" onClick={() => { setTitle(r.described.title); setType(r.described.item_type); }}>Use this title</button>
+              <button type="button" onClick={() => navigate("/items/new", { state: { photos: picked, described: r.described } })}>Fill in all the details</button>
+            </div>
+          )}
+        />
+      )}
       <div className="group-save">
         <div className="segmented" role="radiogroup" aria-label="Save as">
           <button type="button" role="radio" aria-checked={mode === "new"} className={mode === "new" ? "on" : ""} onClick={() => setMode("new")}>New item</button>

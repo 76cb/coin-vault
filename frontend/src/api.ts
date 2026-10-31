@@ -207,6 +207,7 @@ export interface UploadFile {
   duplicate_of_item_id: number | null;
   duplicate_kind: "exact" | "similar" | null;
   urls: { thumb: string; medium: string; original: string };
+  sha256?: string | null;
 }
 export interface UploadGroup {
   id: number;
@@ -472,6 +473,70 @@ export interface Valuation {
   created_at: string;
 }
 
+export interface AiStatus {
+  ready: boolean;
+  model: string | null;
+}
+export interface AiSettings extends AiStatus {
+  url: string;
+}
+export interface AiModel {
+  name: string;
+  size: number | null;
+  parameter_size: string | null;
+  quantization: string | null;
+  vision: boolean;
+}
+export interface AiCheck {
+  url: string;
+  version: string;
+  models: AiModel[];
+}
+export interface AiPhotoRef {
+  sha256: string;
+  role: PhotoRole;
+}
+export interface AiMatch {
+  id: number;
+  title: string;
+  thumb: string | null;
+  quantity: number;
+  why: string;
+}
+export interface AiIdentify {
+  model: string;
+  seconds: number;
+  load_seconds: number;
+  confidence: "high" | "medium" | "low";
+  title: string;
+  kind: ItemType;
+  country: string | null;
+  denomination: string | null;
+  year: number | null;
+  mint_mark: string | null;
+  series: string | null;
+  weight_text: string | null;
+  holder: { service: string | null; grade: string | null; cert_number: string | null; pcgs_number: string | null; label_text: string | null } | null;
+  barcodes: { text: string; format: string }[];
+  notes: string | null;
+  described: Described;
+  same_coin: AiMatch[];
+  same_photos: AiMatch[];
+}
+export interface AiGrade {
+  model: string;
+  seconds: number;
+  low: string;
+  high: string;
+  low_number: number;
+  high_number: number;
+  summary: string;
+  wear: string | null;
+  surfaces: string | null;
+  problems: string[];
+  photo_advice: string | null;
+}
+
 export interface Described {
   item_type: ItemType;
   title: string;
@@ -485,6 +550,7 @@ export interface Described {
     sheldon_grade: number | null;
     designations: string[];
     details_reason: string | null;
+    cert_number?: string | null;
   } | null;
   recognized: string[];
   notes: string[];
@@ -806,6 +872,12 @@ export const api = {
     request<{ count: number; types: NumistaHit[] }>("GET", `${A}/numista/search?${new URLSearchParams(year ? { q, year } : { q })}`),
   numistaType: (id: number) => request<NumistaType>("GET", `${A}/numista/types/${id}`),
   numistaEstimate: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/numista/estimate`),
+  aiStatus: () => request<AiStatus>("GET", `${A}/ai`),
+  aiSettings: () => request<AiSettings>("GET", `${A}/ai/settings`),
+  saveAiSettings: (body: { url: string; model: string }) => request<AiSettings>("PUT", `${A}/ai/settings`, body),
+  aiCheck: (url: string) => request<AiCheck>("POST", `${A}/ai/check`, { url }),
+  aiIdentify: (photos: AiPhotoRef[], itemId?: number) => request<AiIdentify>("POST", `${A}/ai/identify`, { photos, item_id: itemId ?? null }),
+  aiGrade: (photos: AiPhotoRef[], itemId?: number) => request<AiGrade>("POST", `${A}/ai/grade`, { photos, item_id: itemId ?? null }),
   pcgsLookup: (q: PcgsQuery) => request<PcgsLookup>("POST", `${A}/pcgs/lookup`, q),
   pcgsReadBarcode: (file: File) => {
     const fd = new FormData();

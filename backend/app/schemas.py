@@ -425,6 +425,7 @@ class UploadFileOut(_Base):
     duplicate_of_item_id: int | None
     duplicate_kind: str | None
     urls: dict[str, str]
+    sha256: str | None = None  # the file, as the photo library and photo AI know it
 
 
 class UploadGroupOut(_Base):

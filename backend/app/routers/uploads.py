@@ -59,6 +59,7 @@ def _file_out(db: Session, f: UploadFileRow) -> UploadFileOut:
         duplicate_of_item_id=dup_item,
         duplicate_kind=f.duplicate_kind,
         urls=item_svc.upload_file_urls(f.id),
+        sha256=f.sha256,
     )
 
 

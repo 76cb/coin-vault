@@ -14,7 +14,7 @@ from app.db import get_db
 from app.deps import Principal, read_items
 from app.models import Composition
 from app.routers.compositions import CompositionMatchOut, _out, _visible, match
-from app.services.describe import LINE_WORDS, describe
+from app.services.describe import LINE_WORDS, Described, describe
 
 router = APIRouter(tags=["items"])
 
@@ -98,7 +98,11 @@ def _bullion_matches(db: Session, principal: Principal, line: str, country: str 
 
 @router.post("/items/describe", response_model=DescribeOut)
 def describe_item(body: DescribeIn, principal: Principal = Depends(read_items), db: Session = Depends(get_db)):
-    d = describe(body.text)
+    return described_out(db, principal, describe(body.text))
+
+
+def described_out(db: Session, principal: Principal, d: Described) -> DescribeOut:
+    """What the title reader understood, with the reference compositions that fit it."""
     comps: list[CompositionMatchOut] = []
     if d.composition_key:
         c = db.scalar(select(Composition).where(_visible(principal), Composition.key == d.composition_key))

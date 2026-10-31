@@ -124,7 +124,7 @@ function describeQuery(q: PcgsQuery): string {
 }
 
 /** One PCGS lookup, only when asked: each one counts against the day's PCGS allowance. */
-function PcgsFind({ query, onUse, auto = false }: { query: PcgsQuery; onUse: (defaults: Partial<FormState>, after?: AfterSave) => void; auto?: boolean }) {
+export function PcgsFind({ query, onUse, auto = false, intro }: { query: PcgsQuery; onUse: (defaults: Partial<FormState>, after?: AfterSave) => void; auto?: boolean; intro?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [found, setFound] = useState<PcgsLookup | null>(null);
@@ -153,7 +153,7 @@ function PcgsFind({ query, onUse, auto = false }: { query: PcgsQuery; onUse: (de
   if (!found) {
     return (
       <div className="qs-result qs-pcgs">
-        {!auto && <p>{"cert_no" in query ? "This looks like a PCGS cert number." : "This looks like a PCGS number and grade."}</p>}
+        {!auto && <p>{intro ?? ("cert_no" in query ? "This looks like a PCGS cert number." : "This looks like a PCGS number and grade.")}</p>}
         {(!auto || error) && (
           <button type="button" className="primary" onClick={look} disabled={busy}>
             {busy ? "Looking up…" : `Look up ${describeQuery(query)} at PCGS`}

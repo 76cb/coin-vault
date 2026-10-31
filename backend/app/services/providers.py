@@ -23,6 +23,8 @@ SYSTEM_DEFAULTS: dict[str, object] = {
     "updates_enabled": True,  # weekly refresh of the PCGS and Numista values you've fetched
     "updates_day": "sun",
     "updates_time": "05:40",  # local time (CV_TIMEZONE)
+    "ai_url": "",  # an Ollama server on your network, like http://192.168.1.80:11434; empty = photo AI off
+    "ai_model": "",  # a model on it that can see photos
 }
 
 

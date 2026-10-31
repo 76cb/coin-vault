@@ -1,24 +1,34 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { ReactNode, useCallback, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { api, PhotoRole, PickedPhoto, ROLE_LABELS } from "../api";
-import ItemForm, { FormState } from "../components/ItemForm";
+import { api, Described, PhotoRole, PickedPhoto, ROLE_LABELS } from "../api";
+import { AiIdentify, useAiReady } from "../components/Ai";
+import ItemForm, { defaultsFromDescription, FormState } from "../components/ItemForm";
 import QuickStart, { AfterSave } from "../components/QuickStart";
 
 export default function NewItem() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [seed, setSeed] = useState<{ n: number; defaults: Partial<FormState>; after?: AfterSave } | null>(null);
+  const carried = useLocation().state as { photos?: PickedPhoto[]; described?: Described } | null;
+  // details the AI already read on the Upload page arrive filled in
+  const [seed, setSeed] = useState<{ n: number; defaults: Partial<FormState>; after?: AfterSave } | null>(
+    carried?.described ? { n: 1, defaults: defaultsFromDescription(carried.described) } : null,
+  );
   const use = useCallback((defaults: Partial<FormState>, after?: AfterSave) => setSeed({ n: Date.now(), defaults, after }), []);
-  const carried = (useLocation().state as { photos?: PickedPhoto[] } | null)?.photos;
-  const [photos, setPhotos] = useState<PickedPhoto[]>(carried ?? []);
+  const [photos, setPhotos] = useState<PickedPhoto[]>(carried?.photos ?? []);
+  const ai = useAiReady();
   return (
     <>
       <div className="page-head">
         <h1>Add item</h1>
       </div>
-      {photos.length > 0 && <ChosenPhotos photos={photos} onChange={setPhotos} />}
+      {photos.length > 0 && (
+        <ChosenPhotos photos={photos} onChange={setPhotos}>
+          {ai && <AiIdentify photos={photos.map((p) => ({ sha256: p.sha256, role: p.role }))} onUse={use} />}
+        </ChosenPhotos>
+      )}
+      {carried?.described && seed?.n === 1 && <p className="success">Filled in from what the AI read on the photos. Check it, add what you paid, and save.</p>}
       <QuickStart onUse={use} />
       <p className="muted lede">
         Or fill in the form yourself. Only the title is required
@@ -56,7 +66,7 @@ export default function NewItem() {
 }
 
 /** The photos picked on the Photos page: set each one's side, reorder, or leave one out. */
-function ChosenPhotos({ photos, onChange }: { photos: PickedPhoto[]; onChange: (p: PickedPhoto[]) => void }) {
+function ChosenPhotos({ photos, onChange, children }: { photos: PickedPhoto[]; onChange: (p: PickedPhoto[]) => void; children?: ReactNode }) {
   const set = (i: number, role: PhotoRole) => onChange(photos.map((p, j) => (j === i ? { ...p, role } : p)));
   const move = (i: number, by: number) => {
     const next = [...photos];
@@ -91,6 +101,7 @@ function ChosenPhotos({ photos, onChange }: { photos: PickedPhoto[]; onChange: (
       <p className="hint">
         {fronts > 1 ? "More than one photo is marked as the obverse; the first of them becomes the cover." : fronts === 1 ? "The obverse becomes the cover photo." : "The first photo becomes the cover."}
       </p>
+      {children}
     </section>
   );
 }
