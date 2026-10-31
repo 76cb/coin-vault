@@ -12,6 +12,7 @@ import Login from "./pages/Login";
 import NewItem from "./pages/NewItem";
 import Settings from "./pages/Settings";
 import Photos from "./pages/Photos";
+import Report from "./pages/Report";
 import Upload from "./pages/Upload";
 
 export default function App() {
@@ -71,6 +72,7 @@ export default function App() {
           <Route path="/items/:id" element={<ItemPage />} />
           <Route path="/photos" element={<Photos />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="/report" element={<Report />} />
           <Route path="/settings" element={<Settings user={me.data.user.username} admin={me.data.user.is_admin} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

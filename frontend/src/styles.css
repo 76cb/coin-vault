@@ -201,7 +201,7 @@ button:hover, .button:hover { border-color: var(--ink-2); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.primary, .button.primary { background: var(--primary-bg); border-color: var(--primary-bg); color: var(--primary-ink); }
 button.primary:hover:not(:disabled), .button.primary:hover { background: var(--primary-hover); box-shadow: inset 0 -2px 0 var(--champagne); }
-button.ghost { background: transparent; border-color: transparent; color: var(--gold); padding-inline: 0.5rem; }
+button.ghost, .button.ghost { background: transparent; border-color: transparent; color: var(--gold); padding-inline: 0.5rem; }
 button.ghost:hover { border-color: var(--hairline); }
 button.small { min-height: 34px; padding: 0.25rem 0.65rem; font-size: var(--step--1); }
 button.danger { color: var(--bad); }
@@ -794,3 +794,76 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
 .backup-row-actions a.button { border-color: transparent; background: transparent; min-height: 32px; padding: 0 0.55rem; font-size: var(--step--1); font-weight: 700; color: var(--gold); box-shadow: none; }
 :root[data-theme="dark"] .backup-row-actions a.button { color: var(--champagne); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .backup-row-actions a.button { color: var(--champagne); } }
+
+/* --- Insurance report: a document on screen, plain black on white on paper ------------------ */
+
+.report-tools { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--hairline); }
+.report-tools-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem; }
+.report-tools-row + .report-tools-row { justify-content: flex-start; }
+.report-tools label:not(.check) { display: inline-flex; flex-direction: row; align-items: center; gap: 0.5rem; margin: 0; }
+.report-tools select { width: auto; }
+.report-tools .hint { margin: 0; }
+
+.report-doc { background: var(--surface); border: 1px solid var(--hairline); padding: clamp(1.25rem, 4vw, 3rem); max-width: 1000px; margin: 0 auto; }
+.report-head { border-bottom: 2px solid var(--ink); padding-bottom: 0.9rem; margin-bottom: 1.5rem; }
+.report-head h1 { font-size: var(--step-3); }
+.report-head p { margin: 0.4rem 0 0; color: var(--ink-2); }
+.report-summary { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 0.75rem 2.5rem; align-items: start; }
+.report-total span { display: block; color: var(--ink-2); font-size: var(--step--1); }
+.report-total strong { font-family: var(--display); font-size: clamp(2rem, 6vw, 2.75rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; }
+.report-summary dl { margin: 0; display: grid; gap: 0.35rem; }
+.report-summary dl div { display: grid; grid-template-columns: 9.5rem 1fr; gap: 0.75rem; }
+.report-summary dt { color: var(--ink-2); font-size: var(--step--1); padding-top: 0.15em; }
+.report-summary dd { margin: 0; }
+.report-method { grid-column: 1 / -1; color: var(--ink-2); font-size: var(--step--1); max-width: 75ch; margin: 0.5rem 0 0; }
+.report-section h2 { font-size: var(--step-0); margin: 2rem 0 0.5rem; }
+.report-table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+.report-table th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: var(--step--1); border-bottom: 1px solid var(--ink); padding: 0.35rem 0.6rem 0.35rem 0; vertical-align: bottom; }
+.report-table td { padding: 0.65rem 0.6rem 0.65rem 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.report-table tfoot td { border-top: 1px solid var(--ink); border-bottom: 0; font-weight: 700; }
+.report-table .col-money { text-align: right; white-space: nowrap; padding-right: 0; }
+.report-locations td:nth-child(n + 2), .report-locations th:nth-child(n + 2) { text-align: right; }
+.report-locations { max-width: 32rem; }
+.report-table .col-n { width: 2.5rem; color: var(--ink-2); }
+.report-table .col-photo { width: 7.5rem; }
+.report-table .col-where { width: 11rem; }
+.report-photos { display: flex; gap: 4px; }
+.report-photos img { width: 56px; height: 56px; object-fit: cover; border-radius: var(--r); background: var(--well); }
+.report-photos.round img { border-radius: 50%; }
+.report-title { display: block; font-weight: 650; }
+.report-line { display: block; color: var(--ink-2); font-size: var(--step--1); margin-top: 0.15rem; }
+.report-ids { color: var(--ink); font-variant-numeric: tabular-nums; }
+.report-basis { white-space: normal; max-width: 12rem; margin-left: auto; }
+.report-foot { margin-top: 2rem; padding-top: 0.75rem; border-top: 1px solid var(--hairline); color: var(--ink-2); font-size: var(--step--1); }
+
+@media (max-width: 700px) {
+  .report-summary { grid-template-columns: 1fr; }
+  .report-summary dl div { grid-template-columns: 1fr; gap: 0; }
+  .report-table .col-where, .report-table .col-n { display: none; }
+  .report-table .col-photo { width: 4rem; }
+  .report-photos img + img { display: none; }
+  .report-photos img { width: 48px; height: 48px; }
+  .report-table .report-basis, .report-table .col-photo .hint { display: none; }
+  .report-table .col-money { white-space: normal; }
+  .report-items tfoot td:first-child { display: table-cell; }
+}
+
+@media print {
+  :root:root:root {
+    --ink: #000; --ink-2: #444; --surface: #fff; --porcelain: #fff; --hairline: #c8c8c8; --hairline-strong: #999; --well: #eee;
+    color-scheme: light;
+  }
+  @page { margin: 14mm 12mm; }
+  body { background: #fff; color: #000; }
+  .topbar, .report-tools { display: none !important; }
+  .page { max-width: none; padding: 0; }
+  .report-doc { border: 0; padding: 0; max-width: none; }
+  .report-table thead { display: table-header-group; }
+  .report-table tr, .report-summary, .report-head { break-inside: avoid; }
+  .report-section h2 { break-after: avoid; }
+  .report-table tfoot { display: table-row-group; } /* the total once, at the end, not at the foot of every page */
+  .report-table .col-photo { width: 8.25rem; }
+  .report-photos img { width: 60px; height: 60px; }
+  .refetching { opacity: 1 !important; }
+  a { color: inherit; text-decoration: none; }
+}

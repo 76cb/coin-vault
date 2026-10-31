@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -60,10 +61,20 @@ def _load(db: Session, principal: Principal, item_id: int, include_deleted: bool
     return svc.get_item(db, principal, item_id, include_deleted)
 
 
-@router.get("", response_model=ItemPage)
-def list_items(
-    principal: Principal = Depends(read_items),
-    db: Session = Depends(get_db),
+@dataclass
+class ItemFilters:
+    """The Collection page's filters, shared by the list, the CSV export and the insurance report."""
+
+    q: str | None = None
+    item_type: str | None = None
+    item_status: str | None = None
+    metal: str | None = None
+    location_id: int | None = None
+    tag: str | None = None
+    deleted: bool = False
+
+
+def item_filters(
     q: str | None = Query(default=None, max_length=100),
     item_type: ItemType | None = Query(default=None, alias="type"),
     item_status: ItemStatus | None = Query(default=None, alias="status"),
@@ -71,36 +82,39 @@ def list_items(
     location_id: int | None = None,
     tag: str | None = None,
     deleted: bool = False,
-    sort: Literal["updated", "created", "title", "acquired", "year"] = "updated",
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
-) -> ItemPage:
+) -> ItemFilters:
+    return ItemFilters(q, item_type, item_status, metal, location_id, tag, deleted)
+
+
+def filtered_items(owner_id: int, f: ItemFilters):
+    """A select of the owner's items matching the filters (joined to coin, banknote and condition details)."""
     stmt = (
         select(Item)
         .outerjoin(CoinDetails, CoinDetails.item_id == Item.id)
         .outerjoin(BanknoteDetails, BanknoteDetails.item_id == Item.id)
         .outerjoin(ItemCondition, ItemCondition.item_id == Item.id)
-        .where(Item.owner_id == principal.owner_id)
+        .where(Item.owner_id == owner_id)
     )
-    stmt = stmt.where(Item.deleted_at.is_not(None) if deleted else Item.deleted_at.is_(None))
-    if item_type:
-        stmt = stmt.where(Item.item_type == item_type)
-    if item_status:
-        stmt = stmt.where(Item.status == item_status)
-    if location_id is not None:
-        stmt = stmt.where(Item.location_id == location_id)
-    if metal:
-        stmt = stmt.where(exists().where(ItemMetalContent.item_id == Item.id, ItemMetalContent.metal == metal))
-    if tag:
+    stmt = stmt.where(Item.deleted_at.is_not(None) if f.deleted else Item.deleted_at.is_(None))
+    if f.item_type:
+        stmt = stmt.where(Item.item_type == f.item_type)
+    if f.item_status:
+        stmt = stmt.where(Item.status == f.item_status)
+    if f.location_id is not None:
+        stmt = stmt.where(Item.location_id == f.location_id)
+    if f.metal:
+        stmt = stmt.where(exists().where(ItemMetalContent.item_id == Item.id, ItemMetalContent.metal == f.metal))
+    if f.tag:
         stmt = stmt.where(
             exists().where(
                 item_tags.c.item_id == Item.id,
                 item_tags.c.tag_id == Tag.id,
-                func.lower(Tag.name) == tag.lower(),
+                func.lower(Tag.name) == f.tag.lower(),
             )
         )
-    if q:
-        like = f"%{q.strip()}%"
+    if f.q:
+        q = f.q.strip()
+        like = f"%{q}%"
         conds = [
             Item.title.ilike(like),
             Item.notes.ilike(like),
@@ -113,24 +127,42 @@ def list_items(
             BanknoteDetails.serial_number.ilike(like),
             ItemCondition.cert_number.ilike(like),
         ]
-        if q.strip().isdigit():
-            conds.append(CoinDetails.year == int(q.strip()))
+        if q.isdigit():
+            conds.append(CoinDetails.year == int(q))
         stmt = stmt.where(or_(*conds))
+    return stmt
+
+
+ITEM_LOAD = (
+    selectinload(Item.tags),
+    selectinload(Item.photos),
+    selectinload(Item.valuations),
+    selectinload(Item.coin),
+    selectinload(Item.bar),
+    selectinload(Item.banknote),
+    selectinload(Item.lot),
+    selectinload(Item.other),
+    selectinload(Item.condition),
+    selectinload(Item.metal_content),
+)
+
+
+@router.get("", response_model=ItemPage)
+def list_items(
+    principal: Principal = Depends(read_items),
+    db: Session = Depends(get_db),
+    f: ItemFilters = Depends(item_filters),
+    sort: Literal["updated", "created", "title", "acquired", "year"] = "updated",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+) -> ItemPage:
+    stmt = filtered_items(principal.owner_id, f)
     total = db.scalar(select(func.count()).select_from(stmt.with_only_columns(Item.id).subquery())) or 0
     stmt = (
         stmt.order_by(SORTS[sort], Item.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
-        .options(
-            selectinload(Item.tags),
-            selectinload(Item.photos),
-            selectinload(Item.valuations),
-            selectinload(Item.coin),
-            selectinload(Item.banknote),
-            selectinload(Item.condition),
-            selectinload(Item.metal_content),
-            selectinload(Item.lot),
-        )
+        .options(*ITEM_LOAD)
     )
     rows = db.scalars(stmt).unique().all()
     paths = {

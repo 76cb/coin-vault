@@ -283,6 +283,41 @@ export interface SpotHistory {
   holdings_toz: string;
   points: { t: string; price: string }[];
 }
+export interface ReportItem {
+  id: number;
+  title: string;
+  kind: string;
+  status: string;
+  quantity: number;
+  description: string;
+  grade: string | null;
+  identifiers: string[];
+  metals: string;
+  location: string | null;
+  acquired_date: string | null;
+  cost: string | null;
+  current: string | null;
+  current_each: string | null;
+  basis: string;
+  photos: string[];
+}
+export type ReportOrder = "value" | "location" | "title" | "acquired";
+export interface InsuranceReport {
+  owner: string;
+  date: string;
+  generated_at: string;
+  currency: string;
+  spot: { metal: Metal; label: string; price: string; price_time: string | null }[];
+  count: number;
+  pieces: number;
+  current: string;
+  melt: string;
+  cost: string;
+  cost_items: number;
+  unvalued: number;
+  by_location: { label: string; count: number; pieces: number; current: string }[];
+  items: ReportItem[];
+}
 export interface ValuePoint {
   day: string; // YYYY-MM-DD
   value: string;
@@ -713,6 +748,8 @@ export const api = {
   refreshSpot: () => request<{ ok: boolean; source: string | null; old_metals: Metal[]; errors: string[]; latest: SpotLatest }>("POST", `${A}/prices/spot/refresh`),
   spotHistory: (metal: Metal, days: number) => request<SpotHistory>("GET", `${A}/prices/spot/history?metal=${metal}&days=${days}`),
   summary: () => request<Summary>("GET", `${A}/portfolio/summary`),
+  report: (params: Record<string, string>) => request<InsuranceReport>("GET", `${A}/report?${new URLSearchParams(params)}`),
+  exportCsvUrl: (params: Record<string, string>) => `${A}/export/items.csv?${new URLSearchParams(params)}`,
   valueHistory: (days: number, type?: ItemType | "", metal?: Metal | "") => {
     const q = new URLSearchParams({ days: String(days) });
     if (type) q.set("type", type);

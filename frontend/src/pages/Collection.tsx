@@ -29,6 +29,11 @@ export default function Collection() {
     setParams(next, { replace: true });
   };
 
+  // the export and the report use the same filters as the list (not its page)
+  const exportParams = Object.fromEntries(Object.entries(filters).filter(([k]) => k !== "page"));
+  const reportQuery = new URLSearchParams(
+    Object.entries(exportParams).filter(([k]) => ["q", "type", "metal", "location_id", "tag"].includes(k)),
+  ).toString();
   const total = items.data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const filtered = Object.keys(filters).some((k) => !["sort", "page"].includes(k));
@@ -38,6 +43,8 @@ export default function Collection() {
       <div className="page-head">
         <h1>Collection</h1>
         <div className="head-actions">
+          <a className="button ghost" href={api.exportCsvUrl(exportParams)} download>Export CSV</a>
+          <Link className="button ghost" to={`/report${reportQuery ? `?${reportQuery}` : ""}`}>Insurance report</Link>
           <Link className="button" to="/upload">Upload photos</Link>
           <Link className="button primary" to="/items/new">Add item</Link>
         </div>
