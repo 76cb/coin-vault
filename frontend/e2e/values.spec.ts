@@ -48,9 +48,17 @@ test("dashboard shows totals without spot prices", async ({ page }) => {
   await signIn(page);
   await page.getByRole("link", { name: "Dashboard" }).click();
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-  await expect(page.getByText("Collection value")).toBeVisible();
+  await expect(page.getByText("Collection value", { exact: true })).toBeVisible();
   await expect(page.getByText("No spot prices have been fetched yet")).toBeVisible();
   await expect(page.getByRole("heading", { name: "By type" })).toBeVisible();
+  // the value history explains why it can't draw yet, and its filters still work
+  await expect(page.getByRole("heading", { name: "Collection value over time" })).toBeVisible();
+  const history = page.locator("section", { has: page.locator("#value-history-title") });
+  await expect(history.getByText("The chart starts once spot prices have been fetched")).toBeVisible();
+  await history.getByLabel("Metal").selectOption("Ag");
+  await expect(page.getByRole("heading", { name: "Value of your silver over time" })).toBeVisible();
+  await history.getByRole("radio", { name: "All" }).click();
+  await expect(history.getByRole("radio", { name: "All" })).toHaveAttribute("aria-checked", "true");
 });
 
 test("provider key is saved and never shown back", async ({ page }) => {

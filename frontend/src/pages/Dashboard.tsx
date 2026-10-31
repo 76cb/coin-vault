@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { ago, api, Bucket, compactMoney, Metal, METAL_LABELS, money, Spot } from "../api";
+import { ago, api, Bucket, compactMoney, ITEM_TYPE_LABELS, ItemType, Metal, METAL_LABELS, money, Spot } from "../api";
 import LineChart from "../components/LineChart";
 
 const RANGES: [number, string][] = [
@@ -127,6 +127,8 @@ export default function Dashboard() {
         </dl>
       )}
 
+      {t.item_count > 0 && <ValueHistoryChart currency={cur} />}
+
       <SpotChart currency={cur} held={heldMetals} />
 
       <div className="breakdowns">
@@ -135,6 +137,133 @@ export default function Dashboard() {
         <Breakdown title="By location" buckets={s.by_location} currency={cur} />
       </div>
     </>
+  );
+}
+
+const HISTORY_RANGES: [number, string][] = [
+  [30, "Month"],
+  [90, "3 months"],
+  [365, "Year"],
+  [0, "All"],
+];
+
+const dayTime = (d: string) => new Date(`${d}T12:00:00`).getTime();
+const longDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { dateStyle: "medium" });
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/** What the collection was worth each day: what you held then, at that day's spot price and the market values known by then. */
+function ValueHistoryChart({ currency }: { currency: string }) {
+  const [days, setDays] = useState(90);
+  const [type, setType] = useState<ItemType | "">("");
+  const [metal, setMetal] = useState<Metal | "">("");
+  const q = useQuery({
+    queryKey: ["value-history", days, type, metal],
+    queryFn: () => api.valueHistory(days, type, metal),
+    placeholderData: keepPreviousData,
+  });
+  const h = q.data;
+  const pts = h?.points ?? [];
+  const value = pts.map((p) => ({ t: dayTime(p.day), v: Number(p.value) }));
+  const paid = pts.map((p) => ({ t: dayTime(p.day), v: Number(p.paid) }));
+  const showPaid = paid.some((p) => p.v > 0);
+  const span = value.length > 1 ? (value[value.length - 1].t - value[0].t) / 86_400_000 : 0;
+  const fmtTime = (t: number) => new Date(t).toLocaleDateString(undefined, span > 200 ? { month: "short", year: "2-digit" } : { month: "short", day: "numeric" });
+  const fmtTip = (t: number) => new Date(t).toLocaleDateString(undefined, { dateStyle: "medium" });
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const change = first && last ? Number(last.value) - Number(first.value) : 0;
+  // a percentage only means something when the change is all price movement, with nothing bought or sold
+  const pct = h && !h.added.count && !h.sold.count && first && Number(first.value) > 0 ? (change / Number(first.value)) * 100 : null;
+  const filtered = type || metal;
+  const what = [metal ? METAL_LABELS[metal].toLowerCase() : "", type ? ITEM_TYPE_LABELS[type].toLowerCase() : ""].filter(Boolean).join(" ");
+  const title = filtered ? `Value of your ${what || "items"} over time` : "Collection value over time";
+
+  return (
+    <section className="panel chart-panel" aria-labelledby="value-history-title">
+      <div className="chart-controls">
+        <div className="segmented" role="radiogroup" aria-label="Value history range">
+          {HISTORY_RANGES.map(([d, l]) => (
+            <button key={d} type="button" role="radio" aria-checked={days === d} className={days === d ? "on" : ""} onClick={() => setDays(d)}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <select aria-label="Kind of item" value={type} onChange={(e) => setType(e.target.value as ItemType | "")}>
+          <option value="">Every kind</option>
+          {(Object.entries(ITEM_TYPE_LABELS) as [ItemType, string][]).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        <select aria-label="Metal" value={metal} onChange={(e) => setMetal(e.target.value as Metal | "")}>
+          <option value="">Any metal</option>
+          {(Object.keys(METAL_LABELS) as Metal[]).map((m) => <option key={m} value={m}>{METAL_LABELS[m]}</option>)}
+        </select>
+      </div>
+      <h2 id="value-history-title">{title}</h2>
+      {q.isError && <p className="error">{(q.error as Error).message}</p>}
+      {h && value.length >= 2 && first && last ? (
+        <div className={q.isFetching ? "refetching" : ""}>
+          <dl className="history-figures">
+            <div>
+              <dt>Since {longDay(first.day)}</dt>
+              <dd className={change < 0 ? "is-loss" : change > 0 ? "is-gain" : ""}>
+                {change > 0 ? "+" : ""}{money(String(change), currency)}{pct !== null ? ` (${change > 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>Bought in this time</dt>
+              <dd>{h.added.count ? `${plural(h.added.count, "item")}, ${money(h.added.amount, currency)}` : "Nothing"}</dd>
+            </div>
+            <div>
+              <dt>Sold in this time</dt>
+              <dd>{h.sold.count ? `${plural(h.sold.count, "item")}, ${money(h.sold.amount, currency)}` : "Nothing"}</dd>
+            </div>
+          </dl>
+          <LineChart
+            points={value}
+            label={title}
+            seriesLabel="Value"
+            compare={showPaid ? { points: paid, label: "Paid" } : undefined}
+            format={(v) => compactMoney(v, currency)}
+            formatTime={fmtTime}
+            formatTip={fmtTip}
+          />
+          <ul className="history-notes hint">
+            <li>Each day counts what you held then, at that day's spot price and the market values you'd recorded by then.{h.added.count || h.sold.count ? " Buying and selling move the line too, not just prices." : ""}</li>
+            {h.clipped && h.first_spot && <li>Spot prices have been recorded here since {longDay(h.first_spot)}, so the chart starts there.</li>}
+            {h.undated > 0 && <li>{plural(h.undated, "item has", "items have")} no acquired date, so {h.undated === 1 ? "it counts" : "they count"} from the day {h.undated === 1 ? "it was" : "they were"} added. Add the date on the item to place it correctly.</li>}
+            {showPaid && h.no_cost > 0 && <li>{plural(h.no_cost, "item has", "items have")} no purchase price, so the paid line leaves {h.no_cost === 1 ? "it" : "them"} out.</li>}
+            {last.unvalued > 0 && <li>{plural(last.unvalued, "item has", "items have")} no value yet and {last.unvalued === 1 ? "isn't" : "aren't"} counted.</li>}
+            {h.step_days > 1 && <li>One point a week.</li>}
+          </ul>
+          <details className="chart-table">
+            <summary>Show the numbers</summary>
+            <table className="figures">
+              <thead><tr><th>Day</th><th>Value</th><th>Paid</th><th>Items</th></tr></thead>
+              <tbody>
+                {pts.slice(-60).reverse().map((p) => (
+                  <tr key={p.day}>
+                    <td>{longDay(p.day)}</td>
+                    <td className="tabular">{money(p.value, currency)}</td>
+                    <td className="tabular">{money(p.paid, currency)}</td>
+                    <td className="tabular">{p.items}{p.unvalued ? ` (${p.unvalued} without a value)` : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {pts.length > 60 && <p className="hint">The latest 60 of {pts.length}.</p>}
+          </details>
+        </div>
+      ) : (
+        <p className="chart-empty muted">
+          {q.isPending
+            ? "Loading…"
+            : filtered && last && last.items === 0
+              ? "Nothing in your collection matches these filters."
+              : h?.first_spot
+                ? `Spot prices have been recorded since ${longDay(h.first_spot)}. The chart needs at least two days, so it starts tomorrow.`
+                : "The chart starts once spot prices have been fetched. Press Refresh spot prices above."}
+        </p>
+      )}
+    </section>
   );
 }
 

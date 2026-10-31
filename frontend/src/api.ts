@@ -283,6 +283,27 @@ export interface SpotHistory {
   holdings_toz: string;
   points: { t: string; price: string }[];
 }
+export interface ValuePoint {
+  day: string; // YYYY-MM-DD
+  value: string;
+  paid: string;
+  items: number;
+  pieces: number;
+  unvalued: number;
+}
+export interface ValueHistory {
+  currency: string;
+  start: string | null;
+  end: string;
+  step_days: number;
+  first_spot: string | null;
+  clipped: boolean;
+  undated: number;
+  no_cost: number;
+  added: { count: number; amount: string };
+  sold: { count: number; amount: string };
+  points: ValuePoint[];
+}
 export interface Bucket {
   key: string;
   label: string;
@@ -692,6 +713,12 @@ export const api = {
   refreshSpot: () => request<{ ok: boolean; source: string | null; old_metals: Metal[]; errors: string[]; latest: SpotLatest }>("POST", `${A}/prices/spot/refresh`),
   spotHistory: (metal: Metal, days: number) => request<SpotHistory>("GET", `${A}/prices/spot/history?metal=${metal}&days=${days}`),
   summary: () => request<Summary>("GET", `${A}/portfolio/summary`),
+  valueHistory: (days: number, type?: ItemType | "", metal?: Metal | "") => {
+    const q = new URLSearchParams({ days: String(days) });
+    if (type) q.set("type", type);
+    if (metal) q.set("metal", metal);
+    return request<ValueHistory>("GET", `${A}/portfolio/history?${q}`);
+  },
 
   describe: (text: string) => request<Described>("POST", `${A}/items/describe`, { text }),
   compositions: (params: Record<string, string> = {}) => request<Composition[]>("GET", `${A}/compositions?${new URLSearchParams(params)}`),

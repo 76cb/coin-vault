@@ -23,19 +23,26 @@ function niceTicks(min: number, max: number, count = 4): number[] {
   return out;
 }
 
-/** A single-series line chart with a crosshair tooltip. One axis, one hue, no legend (the title names the series). */
+/**
+ * A line chart with a crosshair tooltip. One axis and one hue; the title names the series.
+ * An optional second series (`compare`, the same times) is drawn as a quiet dashed line, with a key.
+ */
 export default function LineChart({
   points,
   format,
   formatTime,
   formatTip,
   label,
+  seriesLabel,
+  compare,
 }: {
   points: Point[];
   format: (v: number) => string;
   formatTime: (t: number) => string;
   formatTip?: (t: number) => string;
   label: string;
+  seriesLabel?: string; // names the main line in the key and tooltip when there's a compare line
+  compare?: { points: Point[]; label: string };
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
@@ -51,7 +58,7 @@ export default function LineChart({
 
   const geo = useMemo(() => {
     const ts = points.map((p) => p.t);
-    const vs = points.map((p) => p.v);
+    const vs = [...points, ...(compare?.points ?? [])].map((p) => p.v);
     const t0 = Math.min(...ts);
     const t1 = Math.max(...ts);
     const ticks = niceTicks(Math.min(...vs), Math.max(...vs));
@@ -62,11 +69,12 @@ export default function LineChart({
     const x = (t: number) => PAD.left + (t1 === t0 ? iw / 2 : ((t - t0) / (t1 - t0)) * iw);
     const y = (v: number) => PAD.top + ih - ((v - y0) / (y1 - y0 || 1)) * ih;
     const line = points.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
+    const cline = (compare?.points ?? []).map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
     const area = `${line}L${x(t1).toFixed(1)},${PAD.top + ih}L${x(t0).toFixed(1)},${PAD.top + ih}Z`;
     const xTickCount = Math.max(2, Math.min(6, Math.floor(iw / 110)));
     const xTicks = Array.from({ length: xTickCount }, (_, i) => t0 + ((t1 - t0) * i) / (xTickCount - 1));
-    return { x, y, line, area, ticks, xTicks, ih };
-  }, [points, width]);
+    return { x, y, line, cline, area, ticks, xTicks, ih };
+  }, [points, compare, width]);
 
   const nearest = (clientX: number) => {
     const rect = wrap.current!.getBoundingClientRect();
@@ -93,15 +101,16 @@ export default function LineChart({
 
   const last = points[points.length - 1];
   const hp = hover !== null ? points[hover] : null;
+  const cp = hover !== null ? compare?.points[hover] : undefined;
   const tipLeft = hp ? Math.min(Math.max(geo.x(hp.t), 70), width - 70) : 0;
 
-  return (
+  const chart = (
     <div
       ref={wrap}
       className="linechart"
       tabIndex={0}
       role="img"
-      aria-label={`${label}. Latest ${format(last.v)} on ${formatTime(last.t)}. Use the arrow keys to read values.`}
+      aria-label={`${label}. Latest ${format(last.v)} on ${formatTime(last.t)}${compare?.points.length ? `; ${compare.label.toLowerCase()} ${format(compare.points[compare.points.length - 1].v)}` : ""}. Use the arrow keys to read values.`}
       onPointerMove={(e: PointerEvent) => setHover(nearest(e.clientX))}
       onPointerLeave={() => setHover(null)}
       onKeyDown={onKey}
@@ -120,6 +129,7 @@ export default function LineChart({
           </text>
         ))}
         <path className="area" d={geo.area} />
+        {compare && <path className="line compare" d={geo.cline} />}
         <path className="line" d={geo.line} />
         <circle className="end-dot" cx={geo.x(last.t)} cy={geo.y(last.v)} r={4} />
         {hp && (
@@ -131,10 +141,21 @@ export default function LineChart({
       </svg>
       {hp && (
         <div className="chart-tip" style={{ left: tipLeft }} role="status">
-          <strong className="tabular">{format(hp.v)}</strong>
+          <strong className="tabular">{compare && seriesLabel ? `${seriesLabel} ` : ""}{format(hp.v)}</strong>
+          {cp && <span className="tabular">{compare!.label} {format(cp.v)}</span>}
           <span>{(formatTip ?? formatTime)(hp.t)}</span>
         </div>
       )}
     </div>
+  );
+  if (!compare) return chart;
+  return (
+    <>
+      <ul className="chart-key" aria-hidden="true">
+        <li><span className="key-line" />{seriesLabel ?? label}</li>
+        <li><span className="key-line compare" />{compare.label}</li>
+      </ul>
+      {chart}
+    </>
   );
 }

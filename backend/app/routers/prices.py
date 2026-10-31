@@ -6,7 +6,7 @@ import datetime as dt
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -227,4 +227,55 @@ def portfolio_summary(principal: Principal = Depends(read_prices), db: Session =
         by_type=buckets(p.by_type),
         by_location=buckets(p.by_location),
         market_values_available=True,
+    )
+
+
+class ValuePoint(BaseModel):
+    day: dt.date
+    value: Decimal
+    paid: Decimal
+    items: int
+    pieces: int
+    unvalued: int
+
+
+class ChangeOut(BaseModel):
+    count: int
+    amount: Decimal
+
+
+class ValueHistoryOut(BaseModel):
+    currency: str
+    start: dt.date | None
+    end: dt.date
+    step_days: int
+    first_spot: dt.date | None
+    clipped: bool
+    undated: int
+    no_cost: int
+    added: ChangeOut
+    sold: ChangeOut
+    points: list[ValuePoint]
+
+
+@router.get("/portfolio/history", response_model=ValueHistoryOut)
+def portfolio_history(
+    days: int = Query(default=90, ge=0, le=3650, description="how far back; 0 for everything"),
+    item_type: str | None = Query(default=None, alias="type"),
+    metal: Literal["Au", "Ag", "Pt", "Pd"] | None = None,
+    principal: Principal = Depends(read_prices),
+    db: Session = Depends(get_db),
+):
+    """What the collection was worth on each day: what you held then, at that day's spot price and the market values known then."""
+    from app.config import get_settings
+    from app.services.history import collection_history
+
+    if item_type is not None and item_type not in TYPE_LABELS:
+        raise HTTPException(422, f"Unknown type {item_type!r}")
+    h = collection_history(db, principal.owner_id, principal.user.base_currency, get_settings().timezone,
+                           days or None, item_type=item_type, metal=metal)
+    return ValueHistoryOut(
+        currency=h.currency, start=h.start, end=h.end, step_days=h.step_days, first_spot=h.first_spot, clipped=h.clipped,
+        undated=h.undated, no_cost=h.no_cost, added=ChangeOut(**vars(h.added)), sold=ChangeOut(**vars(h.sold)),
+        points=[ValuePoint(**vars(p)) for p in h.points],
     )

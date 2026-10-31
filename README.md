@@ -10,7 +10,7 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 | --- | --- | --- |
 | 1 | Sign-in, items, photos, documents, bulk photo upload | Done |
 | 2 | Spot prices, melt value, dashboard | Done |
-| 3 | Valuation history, exports, backups | Backups done; value history and exports next |
+| 3 | Valuation history, exports, backups | Backups and value history done; exports next |
 | 4 | Market values (SoldComps, Numista, PCGS, manual), quota manager | Mostly done: PCGS by coin number and barcode, and scheduled price-guide refresh, to come |
 | 5 | Local AI identification and grading (optional) | Planned |
 
@@ -63,6 +63,7 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 - **Photo editor:** on an item, Edit on any photo opens it full screen. Crop (free, square with a circle guide for coins, 4:3, 3:4, 3:2 or the original shape), turn, mirror, straighten, and adjust brightness, contrast, saturation, warmth and sharpness. Edits are non-destructive: the uploaded file is never changed, the edits are saved as settings and the thumbnails are rendered from the original, so Reset to original always works. Opening a photo shows the edited version at full size; the original stays downloadable.
 - **PCGS cert lookup:** type or paste a PCGS cert number into the quick add box and press Look up. PCGS's name, grade, designations, cert, PCGS number and metal weight fill the form, and you can save its price guide value as the market value. It uses the [PCGS Public API](https://www.pcgs.com/publicapi) with your own access token (free, 1,000 calls a day; the app stops at a cap you set, 900 by default).
 - **Dashboard:** total melt value, what you paid (known and estimated, with a count of items with no cost), gain on items that have both, and pure ounces by metal.
+- **Value history:** what the collection was worth on each day, over a month, three months, a year or everything, with a dashed line for what you'd paid. Each day counts what you held then (from the acquired date to the sale date) at that day's spot price and the market values you'd recorded by then, so today's point matches the dashboard. Filter by kind of item or metal.
   - A chart of the spot price, or of what your holdings would have been worth, over a day to a year.
   - Breakdowns by metal, type and storage location.
 - **Data providers (Settings):** each provider has a key field, a test button, an on/off switch and a monthly request cap.
@@ -252,8 +253,8 @@ Tokens can do only what their scopes allow. Writes with a token don't need the C
 - **Resolution check uses the whole photo.** It looks at the photo's shorter side, not the coin's diameter, because auto-cropping to the coin isn't implemented yet.
 - **Discarded uploads keep their files.** A discarded group stays on disk so nothing you photographed is lost. There's no "empty the bin" action for them yet.
 - **Login throttling resets on restart.** The failed-login counter is kept in memory, which suits the single-process service.
-- **Market values aren't refreshed automatically.** They're fetched or entered when you choose to, and dated so you can see their age. Exports and valuation history come next in Milestone 3.
+- **Market values aren't refreshed automatically.** They're fetched or entered when you choose to, and dated so you can see their age. Exports come next in Milestone 3.
 - **Sold listings in another currency are left out**, not converted.
 - **Purchase prices aren't converted between currencies.** Changing the display currency changes spot prices and melt values, not what you paid.
-- **The holdings chart uses today's holdings.** It shows what your current metal would have been worth at past prices, not what you held on each date. Valuation history arrives in Milestone 3.
+- **Value history starts when spot prices do.** There's no record of spot prices from before the app was installed, so the value chart starts on the first day it has prices. Items with no acquired date count from the day they were added. The spot chart's "value of what you hold" view still uses today's holdings at past prices; the value history is the one that follows what you actually held.
 - **Price history starts when you install.** The free spot sources give current prices only, so the chart fills in as the app polls.

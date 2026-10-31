@@ -71,15 +71,39 @@ def latest_valuation(item: Item, currency: str | None) -> Valuation | None:
     only counts when there's nothing else: sold listings, a price guide or the owner's own figure come first.
     """
     values = [v for v in item.valuations if currency is None or v.currency == currency]  # newest first
+    return choose_valuation(values, is_slabbed(item))
+
+
+def is_slabbed(item: Item) -> bool:
+    return item.condition is not None and item.condition.grading == "slabbed"
+
+
+def choose_valuation(values: list[Valuation], slabbed: bool) -> Valuation | None:
+    """From values newest first: the pinned one, else (slabbed) the newest that isn't a raw estimate, else the newest."""
     chosen = next((v for v in values if v.pinned), None)
     if chosen is not None:
         return chosen
-    slabbed = item.condition is not None and item.condition.grading == "slabbed"
     if slabbed:
         graded = next((v for v in values if not is_raw_estimate(v)), None)
         if graded is not None:
             return graded
     return values[0] if values else None
+
+
+def apply_rule(rule: str, melt: Decimal | None, market: Decimal | None, cost: Decimal | None) -> tuple[Decimal | None, str]:
+    """The item's current value under its valuation rule, and which figure that was (melt, market, cost or none)."""
+    if rule == "melt":
+        return melt, "melt" if melt is not None else "none"
+    if rule == "market":
+        return market, "market" if market is not None else "none"
+    if rule == "cost":
+        return cost, "cost" if cost is not None else "none"
+    candidates = [(v, n) for v, n in ((melt, "melt"), (market, "market")) if v is not None]  # max
+    return max(candidates, key=lambda c: c[0]) if candidates else (None, "none")
+
+
+def item_cost(item: Item) -> Decimal | None:
+    return None if item.purchase_price is None else money(item.purchase_price + (item.purchase_fees or ZERO))
 
 
 def item_values(
@@ -102,21 +126,9 @@ def item_values(
         else:
             by_metal[metal] = money(oz * price)
     melt = money(sum(by_metal.values(), ZERO)) if by_metal else None
-    cost = None if item.purchase_price is None else money(item.purchase_price + (item.purchase_fees or ZERO))
-
+    cost = item_cost(item)
     rule = item.valuation_rule
-    if rule == "melt":
-        current, applied = melt, "melt" if melt is not None else "none"
-    elif rule == "market":
-        current, applied = market, "market" if market is not None else "none"
-    elif rule == "cost":
-        current, applied = cost, "cost" if cost is not None else "none"
-    else:  # max
-        candidates = [(v, n) for v, n in ((melt, "melt"), (market, "market")) if v is not None]
-        if candidates:
-            current, applied = max(candidates, key=lambda c: c[0])
-        else:
-            current, applied = None, "none"
+    current, applied = apply_rule(rule, melt, market, cost)
     return ItemValues(
         pure_toz_per_unit=per_unit,
         pure_toz_total=total,
