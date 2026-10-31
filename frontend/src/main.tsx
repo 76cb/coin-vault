@@ -9,6 +9,9 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
+import { applyTheme } from "./theme";
+
+applyTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: (count, err: unknown) => (err as { status?: number })?.status !== 401 && count < 2, staleTime: 15_000 } },

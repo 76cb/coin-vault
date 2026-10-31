@@ -59,6 +59,7 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
   - Usage is counted on every call and, where the provider reports it, synced from the provider's own figures daily and when you press Test. The provider's count wins.
   - The usage meter turns amber at 80% of the cap and red at the cap, where calls stop until the period resets. Daily counts and the last calls are listed.
   - SoldComps usage is read from its headers after every search and from its free usage endpoint daily and on Test.
+- **Light and dark:** follows your device by default; the moon/sun button in the header or Settings, Appearance switches it, and the choice is remembered in that browser.
 - **Operations:** migrations run on startup, and there's a health endpoint (`/api/v1/health`, plus `/api/v1/health/ready` when signed in). Logs are structured JSON with secrets redacted.
 
 The interactive API reference is at `http://<host>/api/v1/docs`.

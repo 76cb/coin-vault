@@ -108,3 +108,17 @@ test("enter a market value by hand", async ({ page }) => {
   const prov = page.locator(".market-panel");
   await expect(prov).toContainText(/SoldComps|Search eBay sold listings/);
 });
+
+
+test("dark mode switch is remembered", async ({ page }) => {
+  await signIn(page);
+  const root = page.locator("html");
+  const toDark = page.getByRole("button", { name: "Switch to dark mode" });
+  if (await toDark.count()) await toDark.click();
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("radio", { name: "Same as device" }).click();
+  await expect(root).not.toHaveAttribute("data-theme", /.+/);
+});

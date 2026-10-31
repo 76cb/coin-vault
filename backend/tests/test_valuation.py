@@ -100,4 +100,4 @@ def test_portfolio_totals(api):
     assert p.cost_unknown_items == 1 and p.estimated_cost_items == 1
     assert p.gain == Decimal("360.00") and p.gain_items == 2  # (30-20) + (400-50); B has no cost, so excluded
     assert p.pure_toz == {"Ag": Decimal("3"), "Au": Decimal("0.1")}
-    assert p.by_metal["Ag"].melt == Decimal("90.00")
+    assert p.by_metal["Ag"].melt == Decimal("90.00") and p.by_metal["Ag"].current == Decimal("90.00")

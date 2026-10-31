@@ -4,6 +4,7 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
 import { api, setCsrf } from "./api";
 import SpotTicker from "./components/SpotTicker";
+import ThemeToggle from "./components/ThemeToggle";
 import Collection from "./pages/Collection";
 import Dashboard from "./pages/Dashboard";
 import ItemPage from "./pages/ItemPage";
@@ -55,7 +56,10 @@ export default function App() {
           <NavLink to="/settings">Settings</NavLink>
         </nav>
         <SpotTicker />
-        <button className="signout" onClick={signOut}>Sign out</button>
+        <div className="shell-actions">
+          <ThemeToggle />
+          <button className="signout" onClick={signOut}>Sign out</button>
+        </div>
       </header>
       <main className="page">
         <Routes>

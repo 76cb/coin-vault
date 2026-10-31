@@ -3,6 +3,8 @@ import { FormEvent, useState } from "react";
 
 import { api, ApiToken } from "../api";
 import { PriceSettings, Providers } from "../components/Providers";
+import { useThemeChoice } from "../components/ThemeToggle";
+import { ThemeChoice } from "../theme";
 
 const SCOPES: [string, string][] = [
   ["items:read", "Read items"],
@@ -18,6 +20,7 @@ export default function Settings({ user }: { user: string }) {
         <h1>Settings</h1>
       </div>
       <div className="settings">
+        <Appearance />
         <PriceSettings />
         <Providers />
         <Locations />
@@ -26,6 +29,28 @@ export default function Settings({ user }: { user: string }) {
         <Password user={user} />
       </div>
     </>
+  );
+}
+
+function Appearance() {
+  const [choice, set] = useThemeChoice();
+  const options: [ThemeChoice, string][] = [
+    ["system", "Same as device"],
+    ["light", "Light"],
+    ["dark", "Dark"],
+  ];
+  return (
+    <section className="panel">
+      <h2>Appearance</h2>
+      <div className="segmented" role="radiogroup" aria-label="Theme">
+        {options.map(([v, label]) => (
+          <button key={v} type="button" role="radio" aria-checked={choice === v} className={choice === v ? "on" : ""} onClick={() => set(v)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="hint">Remembered in this browser. The moon or sun button in the header switches too.</p>
+    </section>
   );
 }
 
