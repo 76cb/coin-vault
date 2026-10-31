@@ -74,6 +74,27 @@ def job_backup() -> None:
         db.commit()
 
 
+def job_value_updates() -> None:
+    from app.services import value_updates
+    from app.services.providers import get_system
+
+    with session_factory()() as db:
+        if not get_system(db, "updates_enabled") or value_updates.is_running(db):
+            return
+        try:
+            value_updates.run_and_record(db)
+        except Exception:  # recorded for Settings; never crash the scheduler
+            pass
+
+
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _updates_trigger(day: str, at: str) -> CronTrigger:
+    hour, minute = (int(x) for x in at.split(":"))
+    return CronTrigger(day_of_week=day if day in DAYS else "sun", hour=hour, minute=minute)
+
+
 def _backup_trigger(at: str) -> CronTrigger:
     hour, minute = (int(x) for x in at.split(":"))
     return CronTrigger(hour=hour, minute=minute)
@@ -92,6 +113,8 @@ def start() -> None:
     with session_factory()() as db:
         minutes = int(get_system(db, "spot_poll_minutes") or 15)
         backup_at = str(get_system(db, "backup_time") or "03:15")
+        updates_day = str(get_system(db, "updates_day") or "sun")
+        updates_at = str(get_system(db, "updates_time") or "05:40")
     _scheduler = BackgroundScheduler(timezone=s.timezone, job_defaults={"coalesce": True, "max_instances": 1})
     _scheduler.add_job(
         job_poll_spot,
@@ -102,6 +125,7 @@ def start() -> None:
     )
     _scheduler.add_job(job_sync_quotas, CronTrigger(hour=4, minute=10), id="quota_sync", misfire_grace_time=3600)
     _scheduler.add_job(job_backup, _backup_trigger(backup_at), id="backup", misfire_grace_time=6 * 3600)
+    _scheduler.add_job(job_value_updates, _updates_trigger(updates_day, updates_at), id="value_updates", misfire_grace_time=24 * 3600)
     _scheduler.start()
     log.info("scheduler_started", spot_poll_minutes=minutes)
 
@@ -116,6 +140,19 @@ def reschedule_backup(at: str) -> None:
     if _scheduler is not None:
         _scheduler.reschedule_job("backup", trigger=_backup_trigger(at))
         log.info("backup_rescheduled", at=at)
+
+
+def reschedule_updates(day: str, at: str) -> None:
+    if _scheduler is not None:
+        _scheduler.reschedule_job("value_updates", trigger=_updates_trigger(day, at))
+        log.info("value_updates_rescheduled", day=day, at=at)
+
+
+def next_updates_run() -> dt.datetime | None:
+    if _scheduler is None:
+        return None
+    job = _scheduler.get_job("value_updates")
+    return job.next_run_time if job else None
 
 
 def next_backup_run() -> dt.datetime | None:

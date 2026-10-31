@@ -3,6 +3,7 @@ import { FormEvent, useState } from "react";
 
 import { api, ApiToken } from "../api";
 import Backups from "../components/Backups";
+import ValueUpdates from "../components/ValueUpdates";
 import { PriceSettings, Providers } from "../components/Providers";
 import { useThemeChoice } from "../components/ThemeToggle";
 import { getPhotoFit, PhotoFit, setPhotoFit, ThemeChoice } from "../theme";
@@ -26,6 +27,7 @@ export default function Settings({ user, admin }: { user: string; admin: boolean
         <Providers />
         <Locations />
         <Tags />
+        {admin && <ValueUpdates />}
         {admin && <Backups />}
         <Tokens />
         <Password user={user} />

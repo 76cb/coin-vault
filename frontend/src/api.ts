@@ -602,6 +602,18 @@ export interface BackupEntry {
   download_bytes: number;
 }
 
+export interface UpdateSource { checked: number; changed: number; failed: number; skipped: number; stopped: string | null }
+export interface ValueUpdates {
+  enabled: boolean;
+  day: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+  time: string;
+  timezone: string;
+  next_run: string | null;
+  running: boolean;
+  tracked_pcgs: number;
+  tracked_numista: number;
+  last: { started_at: string; finished_at: string | null; ok: boolean; pcgs?: UpdateSource; numista?: UpdateSource; errors: string[] } | null;
+}
 export interface BackupStatus {
   enabled: boolean;
   time: string;
@@ -715,6 +727,10 @@ export const api = {
   setCover: (itemId: number, photo_id: number) => request<void>("PUT", `${A}/items/${itemId}/cover`, { photo_id }),
   backups: () => request<BackupStatus>("GET", `${A}/backups`),
   backupNow: () => request<BackupEntry>("POST", `${A}/backups`),
+  valueUpdates: () => request<ValueUpdates>("GET", `${A}/value-updates`),
+  runValueUpdates: () => request<ValueUpdates>("POST", `${A}/value-updates`),
+  valueUpdateSettings: (body: { enabled: boolean; day: ValueUpdates["day"]; time: string }) =>
+    request<ValueUpdates>("PUT", `${A}/value-updates/settings`, body),
   backupSettings: (body: { enabled: boolean; time: string }) => request<BackupStatus>("PUT", `${A}/backups/settings`, body),
   deleteBackup: (name: string) => request<void>("DELETE", `${A}/backups/${encodeURIComponent(name)}`),
   backupDownloadUrl: (name: string) => `${A}/backups/${encodeURIComponent(name)}/download`,

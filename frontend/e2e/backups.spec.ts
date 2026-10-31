@@ -21,3 +21,17 @@ test("back up now, see it listed, and download it", async ({ page }) => {
   await section.getByRole("button", { name: "Save schedule" }).click();
   await expect(section.getByText("Schedule saved.")).toBeVisible();
 });
+
+test("value updates: schedule and explanation in Settings", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("link", { name: "Settings" }).click();
+  const s = page.getByRole("region", { name: "Value updates" });
+  await expect(s.getByText("Once a week, the PCGS price guide values")).toBeVisible();
+  await expect(s.getByText(/No items to follow yet|Following/)).toBeVisible();
+  await s.getByRole("combobox", { name: "On" }).selectOption("sat");
+  await s.getByRole("button", { name: "Save schedule" }).click();
+  await expect(s.getByText("Schedule saved.")).toBeVisible();
+  await expect(s.getByText(/next Sat/)).toHaveCount(0); // the e2e server runs no scheduler, so there's no next run to show
+  await s.getByRole("combobox", { name: "On" }).selectOption("sun");
+  await s.getByRole("button", { name: "Save schedule" }).click();
+});

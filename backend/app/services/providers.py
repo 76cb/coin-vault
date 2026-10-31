@@ -20,6 +20,9 @@ SYSTEM_DEFAULTS: dict[str, object] = {
     "spot_pause_weekends": True,
     "backup_enabled": True,
     "backup_time": "03:15",  # local time (CV_TIMEZONE)
+    "updates_enabled": True,  # weekly refresh of the PCGS and Numista values you've fetched
+    "updates_day": "sun",
+    "updates_time": "05:40",  # local time (CV_TIMEZONE)
 }
 
 

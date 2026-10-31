@@ -196,6 +196,15 @@ def estimate(item_id: int, principal: Principal = Depends(write_items), db: Sess
              calls: _Calls = Depends(_calls)):
     """Save Numista's price estimate for the item's issue and grade as a market value, in your display currency."""
     item = item_svc.get_item(db, principal, item_id, False)
+    v = estimate_valuation(calls, item, principal.user.base_currency)
+    db.add(v)
+    db.commit()
+    db.refresh(v)
+    return v
+
+
+def estimate_valuation(calls: _Calls, item, currency: str) -> Valuation:
+    """Numista's estimate for the item's issue and grade, as an unsaved Valuation (HTTPException when it can't)."""
     if item.coin is None or not item.coin.numista_id:
         raise HTTPException(422, "This needs the coin's Numista number (fill it in, or add the item from a Numista search)")
     cond = item.condition
@@ -213,7 +222,6 @@ def estimate(item_id: int, principal: Principal = Depends(write_items), db: Sess
     issue = _issue_for(item, issues)
     if issue is None:
         raise HTTPException(422, "Pick which issue (year and mint) this is: Numista lists several, or none match the year")
-    currency = principal.user.base_currency
     data = calls.cached(f"prices:{type_id}:{issue.id}:{currency}", PRICE_DAYS, "prices",
                         lambda n: (lambda c, p: {"currency": c, "prices": {k: str(v) for k, v in p.items()}})(*n.prices(type_id, issue.id, currency)))
     prices = {k: Decimal(v) for k, v in data["prices"].items()}
@@ -226,14 +234,10 @@ def estimate(item_id: int, principal: Principal = Depends(write_items), db: Sess
         item.coin.numista_issue_id = issue.id
     label = numista.GRADE_NAMES[grade]
     others = ", ".join(f"{numista.GRADE_NAMES[g]} {prices[g]:,.2f}" for g in numista.GRADES if g in prices)
-    v = Valuation(
+    return Valuation(
         item_id=item.id, kind="manual", value_each=prices[grade], currency=currency, as_of=utcnow().date(),
         source=f"Numista estimate ({label})",
         notes=(f"Grade {grade_from} taken from the title. " if grade_from else "") + f"Numista's estimates for this issue: {others}.",
         details={"numista": {"type_id": type_id, "issue_id": issue.id, "grade": grade,
                              "prices": {k: str(p) for k, p in prices.items()}}},
     )
-    db.add(v)
-    db.commit()
-    db.refresh(v)
-    return v
