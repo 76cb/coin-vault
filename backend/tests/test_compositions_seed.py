@@ -1,6 +1,8 @@
 from decimal import Decimal
 
-from app.compositions_seed import ROWS, ROWS_V1, ROWS_V2, ROWS_V3, ROWS_V4, _bar, _catalogue_row, _product
+from app.compositions_seed import (
+    CATALOGUE_DIR, CATALOGUE_V4, CATALOGUE_V5, ROWS, ROWS_V1, ROWS_V2, ROWS_V3, ROWS_V4, ROWS_V5, _bar, _catalogue_row, _product,
+)
 
 
 def test_bar_math_and_labels():
@@ -19,8 +21,11 @@ def test_seed_rows_are_consistent():
     keys = [r["key"] for r in ROWS]
     assert len(keys) == len(set(keys)), "duplicate keys"
     assert ROWS[: len(ROWS_V1)] == ROWS_V1
-    assert ROWS == ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4
-    for r in ROWS_V2 + ROWS_V3 + ROWS_V4:
+    assert ROWS == ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5
+    # every catalogue file is loaded by exactly one migration
+    files = CATALOGUE_V4 + CATALOGUE_V5
+    assert sorted(files) == sorted(p.name for p in CATALOGUE_DIR.glob("*.json")) and len(files) == len(set(files))
+    for r in ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5:
         assert len(r["key"]) <= 120 and len(r["label"]) <= 200
         assert r["pure_toz"] > 0, r["label"]
         assert r["fineness"] is None or Decimal(0) < r["fineness"] <= 1, r["label"]
@@ -51,7 +56,7 @@ def test_world_catalogue():
             assert r["year_from"] <= r["year_to"], r["label"]
     # no new row repeats a coin we already had (same country, metal, content and years)
     older = [r for r in ROWS_V1 + ROWS_V2 + ROWS_V3 if r["country"]]
-    for r in ROWS_V4:
+    for r in ROWS_V4 + ROWS_V5:
         for o in older:
             same = (o["country"], o["metal"], o["year_from"], o["year_to"]) == (r["country"], r["metal"], r["year_from"], r["year_to"])
             assert not (same and abs(o["pure_toz"] - r["pure_toz"]) < Decimal("0.001")), (r["label"], o["label"])

@@ -1,7 +1,8 @@
 """Standard compositions (actual silver/gold/platinum/palladium weight).
 
 ROWS_V1 is loaded by migration 0002; ROWS_V2 (bars by refiner, more bullion coins) by migration 0004,
-ROWS_V3 (US silver proofs) by 0005 and ROWS_V4 (the world catalogue, app/data/catalogue) by 0006.
+ROWS_V3 (US silver proofs) by 0005, ROWS_V4 (the world catalogue, app/data/catalogue) by 0006
+and ROWS_V5 (more of the catalogue) by 0007.
 
 Pure weight = gross weight (g) / 31.1034768 x fineness, rounded to 6 decimals, from each mint's
 published specifications. Bullion uses the mint's stated pure content. Per-face rows give pure
@@ -299,13 +300,17 @@ def _catalogue_row(r: dict) -> dict:
     )
 
 
-def load_catalogue(directory: Path = CATALOGUE_DIR) -> list[dict]:
+def load_catalogue(files: list[str], directory: Path = CATALOGUE_DIR) -> list[dict]:
     rows: list[dict] = []
-    for f in sorted(directory.glob("*.json")):
-        rows += [_catalogue_row(r) for r in json.loads(f.read_text(encoding="utf-8"))]
+    for name in files:
+        rows += [_catalogue_row(r) for r in json.loads((directory / name).read_text(encoding="utf-8"))]
     return rows
 
 
-ROWS_V4 = load_catalogue()
+# Each migration loads a fixed list of files, so a file added later gets its own migration.
+CATALOGUE_V4 = ["americas.json", "europe.json", "uk_commonwealth.json", "us_expanded.json", "world_bullion_asia.json"]
+CATALOGUE_V5: list[str] = []
+ROWS_V4 = load_catalogue(CATALOGUE_V4)
+ROWS_V5 = load_catalogue(CATALOGUE_V5)
 
-ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4
+ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5
