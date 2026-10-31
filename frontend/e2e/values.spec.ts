@@ -287,3 +287,13 @@ test("link an existing coin to Numista and save its estimate", async ({ page }) 
   expect(details.diameter_mm).toBe("15.494"); // was blank: filled from Numista
   await expect(page.getByText("Numista N# 420")).toBeVisible();
 });
+
+test("a listing title becomes a short Numista search", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.locator("#qs-text").fill("2021 Silver Eagle T2 First Production PCGS MS70 Legends Life Robert Brazile");
+  await expect(page.locator(".qs-found")).toContainText("American Silver Eagle");
+  await page.getByRole("button", { name: "Look this up on Numista" }).click();
+  await expect(page.getByLabel("Search Numista")).toHaveValue("American Silver Eagle");
+  await expect(page.getByLabel("Year", { exact: true }).first()).toHaveValue("2021");
+});

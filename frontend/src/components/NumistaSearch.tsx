@@ -1,35 +1,21 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, Described, Item, NumistaHit, NumistaIssue, NumistaType } from "../api";
+import { buildNumistaQuery, NumistaStart } from "../numistaQuery";
+
+export type { NumistaStart };
 
 const years = (h: { min_year: number | null; max_year: number | null }) =>
   h.min_year && h.max_year && h.min_year !== h.max_year ? `${h.min_year}–${h.max_year}` : String(h.min_year ?? h.max_year ?? "");
 
-export interface NumistaStart {
-  q: string;
-  year: string;
-  mark?: string;
-}
-
-const isUsDenom = (x: string) => /^\$|^\d+c$/.test(x);
-
-/** What to search Numista for: country, series or product, and denomination; else the text itself. */
+/** What to search Numista for, from the title reader's result (or the text itself). */
 export function numistaQuery(text: string, d: Described | null): NumistaStart {
-  const det = d?.details ?? {};
-  const words = [det.country === "United States" ? "" : det.country, det.product_line ?? det.series, det.denomination]
-    .filter((x) => typeof x === "string" && x && !isUsDenom(x)) as string[];
-  const q = words.length >= 2 ? words.join(" ") : text.replace(/\b(PCGS|NGC|ANACS|ICG|MS|PR|PF|AU|XF|VF)\s?-?\d{0,2}\b/gi, "").replace(/\s+/g, " ").trim();
-  return { q: q.slice(0, 120), year: det.year ? String(det.year) : "", mark: det.mint_mark ? String(det.mint_mark) : undefined };
+  return buildNumistaQuery((d?.details ?? {}) as Record<string, unknown>, text);
 }
 
 /** The same, from a saved item's details. */
 export function numistaQueryForItem(item: Item): NumistaStart {
-  const det = item.details as Record<string, unknown>;
-  const str = (k: string) => (typeof det[k] === "string" && det[k] ? (det[k] as string) : "");
-  const words = [str("country") === "United States" ? "" : str("country"), str("product_line") || str("series"), str("denomination")]
-    .filter((x) => x && !isUsDenom(x));
-  const q = words.length >= 2 ? words.join(" ") : item.title.replace(/\b(PCGS|NGC|ANACS|ICG|MS|PR|PF|AU|XF|VF)\s?-?\d{0,2}\b/gi, "").replace(/\s+/g, " ").trim();
-  return { q: q.slice(0, 120), year: det.year ? String(det.year) : "", mark: str("mint_mark") || undefined };
+  return buildNumistaQuery(item.details as Record<string, unknown>, item.title);
 }
 
 function issueLabel(i: NumistaIssue): string {
@@ -81,6 +67,7 @@ export default function NumistaSearch({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState(false);
+  const [widened, setWidened] = useState<string | null>(null);
   const edited = useRef(false);
 
   // the title reader may answer after this opens: take its words unless the owner typed here
@@ -119,7 +106,20 @@ export default function NumistaSearch({
 
   const search = async (e?: FormEvent) => {
     e?.preventDefault();
-    const r = await run(() => api.numistaSearch(q.trim(), /^\d{1,4}(-\d{1,4})?$/.test(year.trim()) ? year.trim() : undefined));
+    const y = /^\d{1,4}(-\d{1,4})?$/.test(year.trim()) ? year.trim() : undefined;
+    let r = await run(() => api.numistaSearch(q.trim(), y));
+    // nothing in that year: Numista's years can differ from the seller's, so try once without it
+    if (r && r.count === 0 && y) {
+      const all = await run(() => api.numistaSearch(q.trim()));
+      if (all && all.count > 0) {
+        r = all;
+        setYear("");
+        setError(null);
+        setWidened(`Nothing listed for ${y}; showing every year.`);
+      }
+    } else {
+      setWidened(null);
+    }
     if (r) {
       setHits(r.types);
       setTotal(r.count);
@@ -154,6 +154,7 @@ export default function NumistaSearch({
       {hits && !chosen && (
         hits.length ? (
           <>
+            {widened && <p className="hint">{widened}</p>}
             <p className="hint">{total > hits.length ? `${hits.length} of ${total.toLocaleString()} matches; add a year or more words to narrow it.` : `${hits.length} ${hits.length === 1 ? "match" : "matches"}.`}</p>
             <ul className="numista-hits">
               {hits.map((h) => (
