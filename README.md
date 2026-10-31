@@ -11,7 +11,7 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 | 1 | Sign-in, items, photos, documents, bulk photo upload | Done |
 | 2 | Spot prices, melt value, dashboard | Done |
 | 3 | Valuation history, exports, backups | Next |
-| 4 | Sold-price comps (SoldComps, Numista, manual), quota manager | Planned |
+| 4 | Market values (SoldComps, Numista, PCGS, manual), quota manager | Mostly done: PCGS by coin number and barcode, and scheduled price-guide refresh, to come |
 | 5 | Local AI identification and grading (optional) | Planned |
 
 ## What works now
