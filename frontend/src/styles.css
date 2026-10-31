@@ -889,3 +889,16 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
   .chosen-list li, .chosen-list img { width: calc(50vw - 2rem); }
   .chosen-list img { height: calc(50vw - 2rem); }
 }
+
+/* --- Add item: PCGS lookup by number and grade, or barcode ---------------------------------- */
+.qs-also { margin: -0.15rem 0 0.4rem; }
+.qs-links { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+.qs-pcgs-panel { display: flex; flex-direction: column; gap: 0.75rem; }
+.qs-pcgs-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.qs-pcgs-head .segmented { margin: 0; }
+.qs-pcgs-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.6rem 1rem; align-items: end; }
+.qs-pcgs-form .hint, .qs-pcgs-form > p { grid-column: 1 / -1; margin: 0; }
+.qs-pcgs-form button[type=submit] { justify-self: start; }
+.qs-service { border: 0; margin: 0; padding: 0; display: flex; gap: 1rem; align-items: center; }
+.qs-service legend { float: left; margin-right: 0.75rem; font-weight: 600; }
+.qs-read { cursor: pointer; justify-self: start; }

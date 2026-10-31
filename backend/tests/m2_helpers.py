@@ -47,6 +47,8 @@ class FakeProviders:
             "Images": [{"Thumbnail": "https://images.pcgs.com/t.jpg", "Fullsize": "https://images.pcgs.com/f.jpg"}],
             "MajorVariety": "", "MinorVariety": "", "DieVariety": "", "AuctionList": [], "SeriesName": "America the Beautiful Quarters",
             "Category": "Washington Quarters", "HasTrueViewImage": False, "ImageReady": True, "IsNFCSecure": False}}
+        self.pcgs_barcodes = {("0539704032573628", "PCGS"): "32573628"}  # (barcode text, service) -> cert
+        self.pcgs_calls: list[tuple[str, dict]] = []
         self.numista_types = {
             # the spec's own example for N# 420, plus a silver dollar with two issues
             420: {"id": 420, "url": "https://en.numista.com/420", "title": "5 Cents - Victoria",
@@ -149,10 +151,29 @@ class FakeProviders:
         if url.host == "api.pcgs.com":
             if request.headers.get("Authorization") != "bearer pcgs-token":
                 return httpx.Response(500, json={"Message": "An error has occurred."})
-            cert = url.path.rsplit("/", 1)[-1]
+            self.pcgs_calls.append((url.path.rsplit("/", 1)[-1], dict(url.params)))
+            missing = httpx.Response(200, json={"IsValidRequest": False, "ServerMessage": "No data found"})
+            if url.path.endswith("/GetCoinFactsByGrade"):
+                p = url.params
+                if not {"PCGSNo", "GradeNo", "PlusGrade"} <= set(p):  # all three are required
+                    return httpx.Response(400, json={"Message": "The request is invalid."})
+                coin = next((c for c in self.pcgs_certs.values() if c["PCGSNo"] == p["PCGSNo"]), None)
+                if coin is None:
+                    return missing
+                grade = f"PR{p['GradeNo']}{'+' if p['PlusGrade'] == 'true' else ''}"
+                value = 45.0 if p["GradeNo"] == "70" else 18.0
+                return httpx.Response(200, json={**coin, "Grade": grade, "PriceGuideValue": value, "CertNo": "",
+                                                 "IsValidRequest": True, "ServerMessage": "Request successful"})
+            if url.path.endswith("/GetCoinFactsByBarcode"):
+                found = self.pcgs_barcodes.get((url.params.get("barcode"), url.params.get("gradingService")))
+                if found is None:
+                    return missing
+                cert = found
+            else:
+                cert = url.path.rsplit("/", 1)[-1]
             coin = self.pcgs_certs.get(cert)
             if coin is None:
-                return httpx.Response(200, json={"IsValidRequest": False, "ServerMessage": "No data found"})
+                return missing
             return httpx.Response(200, json={**coin, "CertNo": cert, "IsValidRequest": True, "ServerMessage": "Request successful"})
         if url.host == "api.sold-comps.com" and url.path == "/v1/scrape":
             if request.headers.get("Authorization") != "Bearer sc_testkey1234":

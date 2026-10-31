@@ -492,7 +492,7 @@ export interface Described {
 }
 
 export interface PcgsCoin {
-  cert_no: string;
+  cert_no: string | null;
   pcgs_no: string | null;
   name: string | null;
   year: number | null;
@@ -517,9 +517,9 @@ export interface PcgsLookup {
   title: string;
   details: Record<string, string | number | boolean>;
   condition: {
-    grading: "slabbed";
-    grading_service: "PCGS";
-    cert_number: string;
+    grading: "raw" | "slabbed";
+    grading_service: string | null; // PCGS or NGC for a slab; null for a coin type looked up by grade
+    cert_number: string | null;
     grade_text: string | null;
     sheldon_grade: number | null;
     designations: string[];
@@ -614,6 +614,16 @@ export interface BackupStatus {
 }
 
 /** A PCGS cert number on its own ("12345678", "cert #12345678", "PCGS 12345678"), or null. */
+/** What to look up at PCGS: a cert number, a PCGS number and grade, or a PCGS or NGC holder's barcode. */
+export type PcgsQuery = { cert_no: string } | { pcgs_no: string; grade: string } | { barcode: string; service: "PCGS" | "NGC" };
+
+/** "9801 MS65", "PCGS #9801 64+": a PCGS number and grade. Needs the grade's letters, or "PCGS"/"#" in front. */
+export function pcgsNumberGrade(text: string): { pcgs_no: string; grade: string } | null {
+  const m = text.trim().match(/^(pcgs\s*(?:no\.?|number)?\s*#?|#)?\s*(\d{2,7})\s*[,/ ]\s*((?:MS|PR|PF|SP|AU|XF|EF|VF|VG|AG|F|G)?)\s*-?\s*(\d{1,2}\+?)$/i);
+  if (!m || (!m[1] && !m[3]) || Number(m[4].replace("+", "")) > 70) return null;
+  return { pcgs_no: m[2], grade: `${m[3].toUpperCase()}${m[4]}` };
+}
+
 export function certNumber(text: string): string | null {
   const m = text.trim().match(/^(?:pcgs\s*)?(?:cert(?:ificate)?\s*(?:#|no\.?|number)?\s*)?#?\s*(\d{6,10})$/i);
   return m ? m[1] : null;
@@ -780,7 +790,12 @@ export const api = {
     request<{ count: number; types: NumistaHit[] }>("GET", `${A}/numista/search?${new URLSearchParams(year ? { q, year } : { q })}`),
   numistaType: (id: number) => request<NumistaType>("GET", `${A}/numista/types/${id}`),
   numistaEstimate: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/numista/estimate`),
-  pcgsLookup: (certNo: string) => request<PcgsLookup>("POST", `${A}/pcgs/lookup`, { cert_no: certNo }),
+  pcgsLookup: (q: PcgsQuery) => request<PcgsLookup>("POST", `${A}/pcgs/lookup`, q),
+  pcgsReadBarcode: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<{ text: string; format: string }[]>("POST", `${A}/pcgs/read-barcode`, fd);
+  },
   pcgsPriceGuide: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/pcgs/price-guide`),
 
   valuations: (itemId: number) => request<Valuation[]>("GET", `${A}/items/${itemId}/valuations`),

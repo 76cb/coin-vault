@@ -340,3 +340,52 @@ test("a Type 2 MS70 Silver Eagle picks the right Numista coin and issue", async 
   await page.getByRole("button", { name: "Show every year (4)" }).click();
   await expect(page.locator(".issue-list li")).toHaveCount(4);
 });
+
+test("look up at PCGS by number and grade, and by a holder's barcode", async ({ page }) => {
+  const name = unique("1881-S $1 Morgan");
+  const asked: unknown[] = [];
+  await page.route("**/api/v1/pcgs/lookup", async (route) => {
+    const q = route.request().postDataJSON();
+    asked.push(q);
+    const byGrade = "pcgs_no" in q;
+    return route.fulfill({
+      json: {
+        coin: {
+          cert_no: byGrade ? null : "41234567", pcgs_no: "7126", name, year: 1881, denomination: "$1", mint_mark: "S", country: "United States",
+          grade: "MS64", designation: null, metal_content: "90% Silver, 10% Copper", weight_g: "26.73", price_guide: "190",
+          population: 60000, pop_higher: 50000, coinfacts_link: null, series: "Morgan Dollar", images: [],
+        },
+        item_type: "coin",
+        title: byGrade ? `${name} MS64` : `${name} NGC MS64`,
+        details: { country: "United States", year: 1881, mint_mark: "S", series: "Morgan Dollar", denomination: "$1", pcgs_number: "7126" },
+        condition: byGrade
+          ? { grading: "raw", grading_service: null, cert_number: null, grade_text: "MS64", sheldon_grade: 64, designations: [], details_reason: null }
+          : { grading: "slabbed", grading_service: "NGC", cert_number: "41234567", grade_text: "MS64", sheldon_grade: 64, designations: [], details_reason: null },
+        metal: { metal: "Ag", gross_weight_g: "26.73", fineness: "0.9000" },
+        currency_note: null,
+      },
+    });
+  });
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+
+  // typed straight into the box
+  await page.locator("#qs-text").fill("7126 MS64");
+  await page.getByRole("button", { name: "Look up PCGS #7126 in MS64 at PCGS" }).click();
+  await expect(page.locator(".pcgs-card")).toContainText("Price guide $190.00 in MS64");
+  expect(asked.at(-1)).toEqual({ pcgs_no: "7126", grade: "MS64" });
+  await page.getByRole("button", { name: "Fill in the form" }).click();
+  await expect(page.getByLabel("Grade as written")).toHaveValue("MS64");
+
+  // the barcode on an NGC holder, from the panel
+  await page.locator("#qs-text").fill("");
+  await page.getByRole("button", { name: "Look up at PCGS by number and grade or barcode" }).click();
+  await page.getByRole("radio", { name: "Holder barcode" }).click();
+  await page.getByLabel("NGC").check();
+  await page.getByLabel("Barcode", { exact: true }).fill("4123456-001");
+  await page.getByRole("button", { name: "Look up at PCGS", exact: true }).click();
+  await expect(page.locator(".pcgs-card")).toContainText("NGC MS64, cert 41234567");
+  expect(asked.at(-1)).toEqual({ barcode: "4123456-001", service: "NGC" });
+  await page.getByRole("button", { name: "Fill in the form" }).click();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(`${name} NGC MS64`);
+});

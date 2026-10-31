@@ -36,6 +36,9 @@ export default function MarketValue({ item }: { item: Item }) {
   const [pcgsError, setPcgsError] = useState<string | null>(null);
   const slabbed = item.condition?.grading === "slabbed";
   const pcgsSlab = (item.condition?.grading_service ?? "").toUpperCase() === "PCGS" && Boolean(item.condition?.cert_number);
+  const pcgsNo = String(item.details?.pcgs_number ?? "").trim();
+  const gradeNo = /\d{1,2}\+?/.exec(item.condition?.grade_text || String(item.condition?.sheldon_grade ?? ""))?.[0];
+  const pcgsByGrade = !pcgsSlab && Boolean(pcgsNo && gradeNo);
   const history = useQuery({ queryKey: ["valuations", item.id], queryFn: () => api.valuations(item.id) });
   const cur = item.values?.currency ?? "USD";
 
@@ -58,11 +61,13 @@ export default function MarketValue({ item }: { item: Item }) {
           <button type="button" role="tab" aria-selected={open === "manual"} className={open === "manual" ? "on" : ""} onClick={() => setOpen(open === "manual" ? null : "manual")}>
             Enter a value
           </button>
-          {pcgsSlab && (
+          {(pcgsSlab || pcgsByGrade) && (
             <button
               type="button"
               disabled={pcgsBusy}
-              title={`Looks up cert ${item.condition?.cert_number} and saves today's PCGS price guide value`}
+              title={pcgsSlab
+                ? `Looks up cert ${item.condition?.cert_number} and saves today's PCGS price guide value`
+                : `Looks up PCGS #${pcgsNo} in grade ${gradeNo} and saves today's PCGS price guide value`}
               onClick={async () => {
                 setPcgsBusy(true);
                 setPcgsError(null);
