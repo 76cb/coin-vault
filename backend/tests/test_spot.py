@@ -224,3 +224,71 @@ def test_one_failed_metal_keeps_the_others(db):
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert set(out.sources) == {"Au", "Ag", "Pt"} and out.old_metals == ["Pd"]
     assert any("HTTP 500 for XPD" in e for e in out.errors)
+
+
+def test_metal_sentinel_fills_only_what_is_missing(db):
+    from app.services import providers as psvc
+    from app.services import spot
+
+    _set_key(db, "metal_sentinel", "rapid-key")
+    _set_key(db, "metals_dev", "md-key")
+    fake = FakeProviders()
+    fake.gold_api_updated = OLD
+    [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
+    assert out.sources == {"Au": "gold_api", "Ag": "gold_api", "Pt": "metal_sentinel", "Pd": "metal_sentinel"}
+    ms_calls = [c for c in fake.calls if c.startswith("metal-sentinel")]
+    assert len(ms_calls) == 2  # PT and PD only, one request each
+    assert not any("metals.dev" in c for c in fake.calls)  # ahead of Metals.Dev by priority
+    latest = spot.latest(db, "USD", now=WEDNESDAY)
+    assert latest["Pt"].price.price_per_toz == Decimal("1439.0000") and not latest["Pt"].stale
+    # RapidAPI's own count (from the headers) replaces ours
+    q = psvc.quota_for(db, psvc.get_config(db, "metal_sentinel")).period(WEDNESDAY)
+    assert q.used == 102 and q.provider_limit == 7500
+
+
+def test_metal_sentinel_refused_key_falls_back(db):
+    from app.services import spot
+
+    _set_key(db, "metal_sentinel", "rapid-key")
+    _set_key(db, "metals_dev", "md-key")
+    fake = FakeProviders()
+    fake.gold_api_updated = OLD
+    fake.ms_status = 403
+    [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
+    assert out.sources["Pt"] == "metals_dev"
+    assert any("refused the key" in e for e in out.errors)
+    assert sum(1 for c in fake.calls if c.startswith("metal-sentinel")) == 1  # stopped after the first refusal
+
+
+def test_metal_sentinel_error_and_unit_are_checked(db):
+    from app.services import spot
+
+    _set_key(db, "metal_sentinel", "rapid-key")
+    fake = FakeProviders()
+    fake.gold_api_updated = OLD
+    fake.ms_body = {"error": "The symbol field is required.", "errors": {"symbol": ["required"]}}
+    [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
+    assert "Pt" not in out.sources and any("symbol field is required" in e for e in out.errors)
+
+    fake.ms_body = {"ID": 1, "results": [{"symbol": "PT", "currency": "USD", "mid": 99.0, "timestamp": 1, "unit": "KILOGRAM"}]}
+    [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY, force=True)
+    assert "Pt" not in out.sources and any("not per troy ounce" in e for e in out.errors)
+
+
+def test_rapidapi_usage_headers():
+    import httpx
+
+    from app.providers.spot import rapidapi_usage
+
+    now = dt.datetime(2026, 10, 28, 15, 0, 7, tzinfo=dt.UTC)
+    h = {"x-rate-limit-rapid-free-plans-hard-limit-limit": "7500",
+         "x-rate-limit-rapid-free-plans-hard-limit-remaining": "7000",
+         "x-rate-limit-rapid-free-plans-hard-limit-reset": str(4 * 86400 - 7)}
+    a = rapidapi_usage(httpx.Response(200, headers=h), now)
+    b = rapidapi_usage(httpx.Response(200, headers={**h, "x-rate-limit-rapid-free-plans-hard-limit-reset": str(4 * 86400 - 70)}),
+                       now + dt.timedelta(seconds=63))
+    assert a.used == 500 and a.limit == 7500 and a.period_end == b.period_end == dt.datetime(2026, 11, 1, 15, 0, tzinfo=dt.UTC)
+    assert a.period_start == dt.datetime(2026, 10, 1, 15, 0, tzinfo=dt.UTC)
+    daily = {"x-ratelimit-requests-limit": "100", "x-ratelimit-requests-remaining": "50", "x-ratelimit-requests-reset": "3600"}
+    assert rapidapi_usage(httpx.Response(200, headers=daily), now) is None
+    assert rapidapi_usage(httpx.Response(200), now) is None

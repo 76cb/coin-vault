@@ -90,7 +90,7 @@ def poll(
             client.close()
 
 
-def _pace_ok(db: Session, cfg: ProviderConfig, quota, now: dt.datetime) -> bool:
+def _pace_ok(db: Session, cfg: ProviderConfig, quota, now: dt.datetime, cost: int = 1) -> bool:
     """Spread a capped provider's requests over its period: at most one per (time left / requests left).
     Free calls (Test, usage checks) don't count, so pressing Test doesn't delay prices."""
     if quota is None:
@@ -106,7 +106,8 @@ def _pace_ok(db: Session, cfg: ProviderConfig, quota, now: dt.datetime) -> bool:
     remaining = quota.remaining(now)
     if remaining is None:
         return True
-    gap = (_aware(quota.period(now).period_end) - now) / max(remaining, 1)
+    calls_left = max(remaining // max(cost, 1), 1)
+    gap = (_aware(quota.period(now).period_end) - now) / calls_left
     return now - _aware(last) >= gap
 
 
@@ -142,16 +143,18 @@ def _poll_one(db: Session, currency: str, client: httpx.Client, now, is_open: bo
         if info.rate_limited and not is_open and not force:
             continue
         quota = psvc.quota_for(db, cfg)
-        if quota is not None and not quota.can_spend(1, now):
+        wanted = sorted(pending)
+        cost = provider.cost_for(wanted)
+        if quota is not None and not quota.can_spend(cost, now):
             out.errors.append(f"{info.label}: monthly cap reached")
             psvc.log_call(db, cfg.provider_key, "spot", "skipped", context=currency, detail="quota cap reached")
             continue
-        if not force and not _pace_ok(db, cfg, quota, now):
+        if not force and not _pace_ok(db, cfg, quota, now, cost):
             # Not an error: the backup is rationed so its free requests last the whole month.
             continue
         with psvc.timed() as t:
             try:
-                result = provider.fetch(client, currency, key)
+                result = provider.fetch(client, currency, key, wanted)
             except ProviderError as exc:
                 if quota is not None:
                     quota.record(exc.cost, now)
@@ -165,6 +168,8 @@ def _poll_one(db: Session, currency: str, client: httpx.Client, now, is_open: bo
                 continue
         if quota is not None:
             quota.record(result.cost, now)
+            if result.usage is not None:
+                quota.sync(result.usage, now)  # the provider's own count wins
         old_here: list[str] = []
         for q in result.quotes:
             if q.metal not in pending:

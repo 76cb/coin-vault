@@ -63,7 +63,7 @@ export default function Dashboard() {
           <p className="notice">
             The {old.map((m) => `${METAL_LABELS[m.metal].toLowerCase()} (from ${new Date(m.price_time!).toLocaleDateString(undefined, { month: "short", day: "numeric" })})`).join(" and ")}{" "}
             {old.length === 1 ? "price is" : "prices are"} out of date, so melt values for {old.length === 1 ? "it" : "them"} are approximate.
-            gold-api.com's platinum and palladium prices have stopped updating; a free Metals.Dev key in <Link to="/settings#providers">Settings</Link> supplies current ones.
+            gold-api.com's platinum and palladium prices have stopped updating; a free Metal Sentinel or Metals.Dev key in <Link to="/settings#providers">Settings</Link> supplies current ones.
           </p>
       )}
 

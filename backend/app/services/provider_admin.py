@@ -67,28 +67,34 @@ def check_provider(db: Session, cfg: ProviderConfig, currency: str, client: http
             return CheckResult(False, str(exc))
         if info.needs_key and not key:
             return CheckResult(False, "No API key saved yet.")
+        cost = 0  # the Test button uses free calls, except where a provider has none
         with psvc.timed() as t:
             try:
                 if cfg.provider_key == "gold_api":
                     usage = None
                     message = _describe_quotes(SPOT_PROVIDERS["gold_api"].fetch(client, currency), currency)
+                elif cfg.provider_key == "metal_sentinel":
+                    message, usage = SPOT_PROVIDERS["metal_sentinel"].check(client, key)
+                    cost = 1
                 else:
                     usage = fetch_usage(cfg, key, client)
                     message = "Key accepted."
-                    if usage is not None and usage.limit is not None:
-                        message += f" {usage.used} of {usage.limit} requests used this period."
+                if usage is not None and usage.limit is not None:
+                    message += f" {usage.used} of {usage.limit} requests used this period."
             except ProviderError as exc:
                 psvc.mark_failure(cfg, str(exc))
-                psvc.log_call(db, cfg.provider_key, "test", "error", http_status=exc.http_status, detail=str(exc))
+                psvc.log_call(db, cfg.provider_key, "test", "error", http_status=exc.http_status, cost=exc.cost, detail=str(exc))
                 db.commit()
                 return CheckResult(False, str(exc))
-        psvc.log_call(db, cfg.provider_key, "test", "ok", cost=0, duration_ms=t["ms"])
+        psvc.log_call(db, cfg.provider_key, "test", "ok", cost=cost, duration_ms=t["ms"])
         psvc.mark_success(cfg)
         cfg.last_error = None
-        if usage is not None:
-            quota = psvc.quota_for(db, cfg)
-            if quota is not None:
+        quota = psvc.quota_for(db, cfg)
+        if quota is not None:
+            if usage is not None:
                 quota.sync(usage)
+            elif cost:
+                quota.record(cost)
         db.commit()
         return CheckResult(True, message, usage)
     finally:

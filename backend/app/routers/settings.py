@@ -164,7 +164,8 @@ def _known(key: str) -> None:
 
 @router.get("/providers", response_model=list[ProviderOut])
 def list_providers(_: Principal = Depends(require_session), db: Session = Depends(get_db)):
-    out = [_provider_out(db, k) for k in CATALOG]
+    order = sorted(CATALOG, key=lambda k: (CATALOG[k].kind != "spot", CATALOG[k].default_priority))
+    out = [_provider_out(db, k) for k in order]
     db.commit()  # persists default rows and periods created on first view
     return out
 

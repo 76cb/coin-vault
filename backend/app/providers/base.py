@@ -42,6 +42,7 @@ class SpotResult:
     cost: int  # quota requests used
     endpoints: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)  # per-metal failures when others succeeded
+    usage: "UsageInfo | None" = None  # quota figures the provider reported alongside the prices
 
 
 @dataclass
@@ -57,7 +58,11 @@ class UsageInfo:
 class SpotProvider(Protocol):
     key: str
 
-    def fetch(self, client: httpx.Client, currency: str, api_key: str | None) -> SpotResult: ...
+    def fetch(self, client: httpx.Client, currency: str, api_key: str | None, metals: list[str] | None = None) -> SpotResult: ...
+
+    def cost_for(self, metals: list[str]) -> int:
+        """Quota requests a fetch of these metals will use."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -91,7 +96,7 @@ CATALOG: dict[str, ProviderInfo] = {
         docs_url="https://gold-api.com/docs",
         key_url=None,
         note="Free, no key. Primary source: gold and silver are live. Its platinum and palladium prices had stopped updating when checked on Oct 31, 2026 (platinum last Sep 17, palladium Oct 16), so every price's own timestamp is checked "
-        "and out-of-date ones come from Metals.Dev instead.",
+        "and out-of-date ones come from a backup (Metal Sentinel, then Metals.Dev) instead.",
         available_from=2,
     ),
     "metals_dev": ProviderInfo(
@@ -106,9 +111,26 @@ CATALOG: dict[str, ProviderInfo] = {
         rate_limited=True,
         docs_url="https://metals.dev/docs",
         key_url="https://metals.dev/pricing",
-        note="Backup, and the source of live platinum and palladium prices. Free plan: 100 requests a month. It is only "
+        note="Second backup, after Metal Sentinel. Free plan: 100 requests a month. It is only "
         "called for metals gold-api.com can't supply current prices for, and calls are spread evenly through the month "
         "(about one every 8 hours with a cap of 90) so the plan lasts.",
+        available_from=2,
+    ),
+    "metal_sentinel": ProviderInfo(
+        key="metal_sentinel",
+        kind="spot",
+        label="Metal Sentinel (RapidAPI)",
+        needs_key=True,
+        has_quota=True,
+        quota_period="billing_cycle",
+        default_cap=7000,
+        default_priority=15,
+        rate_limited=True,
+        docs_url="https://metal-sentinel.com/endpoints",
+        key_url="https://rapidapi.com/ghostsvos/api/metal-sentinel/pricing",
+        note="Live platinum and palladium (updated every 15 seconds). Free RapidAPI plan: 7,500 requests a month, one "
+        "request per metal. Only called for metals gold-api.com can't supply current prices for, paced to last the "
+        "month; RapidAPI's own usage figures are read from each response. Use your RapidAPI application key.",
         available_from=2,
     ),
     "soldcomps": ProviderInfo(

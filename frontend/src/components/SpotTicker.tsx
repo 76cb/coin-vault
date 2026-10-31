@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { ago, api, METAL_LABELS, money } from "../api";
 
-const SOURCES: Record<string, string> = { gold_api: "gold-api.com", metals_dev: "Metals.Dev" };
+const SOURCES: Record<string, string> = { gold_api: "gold-api.com", metal_sentinel: "Metal Sentinel", metals_dev: "Metals.Dev" };
 
 /** Spot prices in the header: price per troy ounce, when it was fetched, and whether it is stale. */
 export default function SpotTicker() {
