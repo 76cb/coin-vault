@@ -20,6 +20,10 @@ as_app() { sudo -u coinvault bash -c 'set -a; . "$0"; set +a; exec "$@"' "$ENV_F
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NODE_MAJOR=22
 
+# Fresh Debian LXC templates often have no generated locale. C.UTF-8 always exists, and
+# PostgreSQL must see a UTF-8 locale or it creates SQL_ASCII databases the app cannot use.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
+
 say() { printf '\n\033[1;33m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mError: %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -88,8 +92,6 @@ DO \$\$ BEGIN
   END IF;
 END \$\$;
 SQL
-  sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='coinvault'" | grep -q 1 \
-    || sudo -u postgres createdb -O coinvault coinvault
   sed -e "s#^CV_DATABASE_URL=.*#CV_DATABASE_URL=postgresql+psycopg://coinvault:$DB_PASS@127.0.0.1:5432/coinvault#" \
       -e "s#^CV_MEDIA_ROOT=.*#CV_MEDIA_ROOT=$DATA_DIR/media#" \
       -e "s#^CV_USE_X_ACCEL=.*#CV_USE_X_ACCEL=true#" \
@@ -99,6 +101,22 @@ SQL
   echo "Wrote $ENV_FILE (database password generated)."
 else
   echo "Keeping existing $ENV_FILE."
+fi
+
+# The app's database must be UTF-8, whatever the cluster default is.
+DB_ENCODING=$(sudo -u postgres psql -tAc "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='coinvault'")
+if [[ -n "$DB_ENCODING" && "$DB_ENCODING" != "UTF8" ]]; then
+  TABLES=$(sudo -u postgres psql -d coinvault -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")
+  if [[ "$TABLES" == "0" ]]; then
+    echo "Recreating the empty coinvault database as UTF-8 (it was $DB_ENCODING)."
+    sudo -u postgres dropdb coinvault
+    DB_ENCODING=""
+  else
+    die "database 'coinvault' uses $DB_ENCODING and already has tables; back it up and convert it to UTF-8 first"
+  fi
+fi
+if [[ -z "$DB_ENCODING" ]]; then
+  sudo -u postgres createdb -O coinvault -E UTF8 -T template0 --locale=C.UTF-8 coinvault
 fi
 
 say "Installing the backend into $VENV"
