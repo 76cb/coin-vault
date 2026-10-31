@@ -80,6 +80,26 @@ US_SERIES: list[tuple[str, str, str]] = [  # (pattern, series name, denomination
     (r"\bsaint[\s-]*gaudens\b|\bst\.?\s*gaudens\b|\bdouble\s*eagle\b", "Saint-Gaudens", "$20"),
 ]
 
+# US series by denomination and year, for a title that names only the denomination ("1956 Quarter").
+# Years where two designs overlap (1909 cents, 1921 dollars, 1938 nickels, 1975-76 Bicentennials) are left out.
+US_SERIES_BY_YEAR: dict[str, list[tuple[int, int, str]]] = {
+    "1c": [(1859, 1908, "Indian Head"), (1910, 1958, "Lincoln Wheat"), (1959, 2008, "Lincoln Memorial"), (2010, 2099, "Lincoln Shield")],
+    "5c": [(1913, 1937, "Buffalo"), (1939, 2099, "Jefferson")],
+    "10c": [(1892, 1915, "Barber"), (1917, 1945, "Mercury"), (1946, 2099, "Roosevelt")],
+    "25c": [(1892, 1915, "Barber"), (1917, 1930, "Standing Liberty"), (1932, 1974, "Washington"), (1977, 1998, "Washington"),
+            (1999, 2008, "50 State Quarters"), (2010, 2021, "America the Beautiful"), (2022, 2025, "American Women")],
+    "50c": [(1892, 1915, "Barber"), (1917, 1947, "Walking Liberty"), (1948, 1963, "Franklin"), (1964, 1974, "Kennedy"), (1977, 2099, "Kennedy")],
+    "$1": [(1878, 1904, "Morgan"), (1922, 1935, "Peace"), (1971, 1974, "Eisenhower"), (1977, 1978, "Eisenhower"), (1979, 1981, "Susan B. Anthony")],
+}
+
+
+def us_series_for(denomination: str | None, year: int | None) -> str | None:
+    for y0, y1, name in US_SERIES_BY_YEAR.get(denomination or "", []):
+        if year and y0 <= year <= y1:
+            return name
+    return None
+
+
 # Bullion programmes -> (product line, country, default metal, {metal or size: reference key})
 BULLION: list[tuple[str, str, str, str]] = [
     (r"\bsilver\s*eagle\b", "American Silver Eagle", "United States", "Ag"),
@@ -401,6 +421,14 @@ def describe(text: str) -> Described:
             d.details["denomination"] = fd
     if d.item_type == "other" and fd:
         d.item_type = "coin"
+    # "1956 Quarter": a US denomination and no other country named is a US coin, and its year says which design
+    if not foreign and named in (None, US) and d.details.get("denomination") in US_SERIES_BY_YEAR and d.item_type == "coin":
+        d.details["country"] = "United States"
+        if "series" not in d.details:
+            series = us_series_for(d.details["denomination"], d.details.get("year"))
+            if series:
+                d.details["series"] = series
+                d.recognized.insert(0, f"{series} {d.details['denomination']}")
     if foreign:
         d.recognized.insert(0, " ".join(x for x in (d.details["country"], d.details.get("denomination")) if x))
     if d.item_type == "coin" and d.metal == "Ag" and re.search(r"\bproof\b|\bpr\s?\d|\bpf\s?\d", low) and d.details.get("year", 0) >= 1992:

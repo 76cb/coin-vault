@@ -126,3 +126,29 @@ def test_production_abbreviations():
     d = describe("2021 $1 Silver Eagle T1 Last Day Prod PCGS MS70 Legends of Life Robert Brazile")
     assert "Last Day of Production" in d.condition["designations"] and d.condition["grade_text"] == "MS70"
     assert "First Production" in describe("2021 ASE T2 First Prod. NGC MS69").condition["designations"]
+
+
+def test_a_bare_us_denomination_is_a_us_coin_with_its_series():
+    from app.services.describe import describe
+
+    d = describe("1956 Quarter")
+    assert d.details["country"] == "United States" and d.details["series"] == "Washington" and d.details["denomination"] == "25c"
+    assert describe("1943 Penny").details["series"] == "Lincoln Wheat"
+    assert describe("1964 half dollar").details["series"] == "Kennedy"
+    assert describe("2005 quarter").details["series"] == "50 State Quarters"
+    # years where two designs were struck: the country, but no guess at the series
+    for title in ("1921 silver dollar", "1909 cent", "1976 quarter"):
+        d = describe(title)
+        assert d.details["country"] == "United States" and "series" not in d.details, title
+    # another country named: left alone
+    d = describe("1956 Canada Quarter")
+    assert d.details["country"] == "Canada" and "series" not in d.details
+
+
+def test_bare_quarter_still_finds_its_silver(api):
+    r = api.post("/api/v1/items/describe", json={"text": "1956 Quarter"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["details"]["country"] == "United States"
+    m = api.get("/api/v1/compositions/match", params={k: v for k, v in body["details"].items() if k in ("country", "denomination", "year", "series")}).json()
+    assert m[0]["key"] == "us-quarter-90"
