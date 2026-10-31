@@ -10,6 +10,7 @@ from tests.m2_helpers import FakeProviders
 NY = ZoneInfo("America/New_York")
 WEDNESDAY = dt.datetime(2026, 10, 28, 11, 0, tzinfo=NY)
 SATURDAY = dt.datetime(2026, 10, 31, 11, 0, tzinfo=NY)
+PROVIDER_TIME = dt.datetime(2026, 10, 28, 15, 0, tzinfo=dt.UTC)  # when the fakes say their prices are from
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ def test_primary_provider_stores_every_metal(db):
     from app.models import ApiCallLog, SpotPrice
     from app.services import spot
 
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert out.ok and out.source == "gold_api"
     rows = {r.metal: r for r in db.scalars(select(SpotPrice))}
@@ -61,7 +62,7 @@ def test_fallback_to_metals_dev_and_quota_counted(db):
     from app.services import spot
 
     _set_key(db, "metals_dev", "md-key")
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_status = 503
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert out.source == "metals_dev"
@@ -78,7 +79,7 @@ def test_all_providers_fail_without_backup_key(db):
     from app.models import SpotPrice
     from app.services import spot
 
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_status = 500
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert not out.ok
@@ -96,7 +97,7 @@ def test_backup_stops_at_cap(db):
     db.commit()
     psvc.quota_for(db, cfg).record(2, WEDNESDAY)
     db.commit()
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_status = 500
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert not out.ok and any("cap" in e for e in out.errors)
@@ -107,7 +108,7 @@ def test_metals_dev_error_response(db):
     from app.services import spot
 
     _set_key(db, "metals_dev", "md-key")
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_status = 500
     fake.metals_dev_body = {"status": "failure", "error_code": 1203, "error_message": "The quota for the current month is exceeded."}
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
@@ -118,7 +119,7 @@ def test_bad_price_is_rejected(db):
     from app.models import SpotPrice
     from app.services import spot
 
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_body = {"currency": "USD", "price": "not-a-number", "symbol": "XAU"}
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert not out.ok and db.scalar(select(SpotPrice)) is None
@@ -127,7 +128,7 @@ def test_bad_price_is_rejected(db):
 def test_weekend_pause_and_force(db):
     from app.services import spot
 
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=SATURDAY)
     assert out.skipped_reason == "markets closed" and fake.calls == []
     [forced] = spot.poll(db, ["USD"], client=fake.client(), now=SATURDAY, force=True)
@@ -137,7 +138,7 @@ def test_weekend_pause_and_force(db):
 def test_stale_flags(db):
     from app.services import spot
 
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert not spot.latest(db, "USD", now=WEDNESDAY + dt.timedelta(minutes=29))["Ag"].stale
     assert spot.latest(db, "USD", now=WEDNESDAY + dt.timedelta(minutes=31))["Ag"].stale
@@ -164,7 +165,7 @@ def test_old_quotes_are_filled_from_the_backup(db):
     from app.services import spot
 
     _set_key(db, "metals_dev", "md-key")
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_updated = OLD
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert out.sources == {"Au": "gold_api", "Ag": "gold_api", "Pt": "metals_dev", "Pd": "metals_dev"}
@@ -182,7 +183,7 @@ def test_backup_is_paced_to_last_the_month(db):
     from app.services import spot
 
     _set_key(db, "metals_dev", "md-key")
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_updated = OLD
     # A Test press is free and must not hold back the next real call.
     provider_admin.check_provider(db, psvc.get_config(db, "metals_dev"), "USD", client=fake.client())
@@ -203,7 +204,7 @@ def test_old_price_kept_once_and_flagged_without_backup(db):
     from app.models import SpotPrice
     from app.services import spot
 
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_updated = OLD
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert out.ok and out.old_metals == ["Pd", "Pt"]
@@ -219,7 +220,7 @@ def test_old_price_kept_once_and_flagged_without_backup(db):
 def test_one_failed_metal_keeps_the_others(db):
     from app.services import spot
 
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_fail = {"XPD"}
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert set(out.sources) == {"Au", "Ag", "Pt"} and out.old_metals == ["Pd"]
@@ -232,7 +233,7 @@ def test_metal_sentinel_fills_only_what_is_missing(db):
 
     _set_key(db, "metal_sentinel", "rapid-key")
     _set_key(db, "metals_dev", "md-key")
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_updated = OLD
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
     assert out.sources == {"Au": "gold_api", "Ag": "gold_api", "Pt": "metal_sentinel", "Pd": "metal_sentinel"}
@@ -251,7 +252,7 @@ def test_metal_sentinel_refused_key_falls_back(db):
 
     _set_key(db, "metal_sentinel", "rapid-key")
     _set_key(db, "metals_dev", "md-key")
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_updated = OLD
     fake.ms_status = 403
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
@@ -264,7 +265,7 @@ def test_metal_sentinel_error_and_unit_are_checked(db):
     from app.services import spot
 
     _set_key(db, "metal_sentinel", "rapid-key")
-    fake = FakeProviders()
+    fake = FakeProviders(stamp=PROVIDER_TIME)
     fake.gold_api_updated = OLD
     fake.ms_body = {"error": "The symbol field is required.", "errors": {"symbol": ["required"]}}
     [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)

@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 
 import httpx
+
+
+def _recent(at: dt.datetime | None = None) -> dt.datetime:
+    """The time providers stamp their prices with: the given moment, or an hour before now (never 'out of date')."""
+    t = at or (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1))
+    return t.astimezone(dt.UTC).replace(microsecond=0)
+
+
+def _iso(at: dt.datetime | None = None) -> str:
+    return _recent(at).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 GOLD = {"XAU": 4000.0, "XAG": 50.0, "XPT": 1500.0, "XPD": 1100.0}
 
@@ -12,7 +23,8 @@ GOLD = {"XAU": 4000.0, "XAG": 50.0, "XPT": 1500.0, "XPD": 1100.0}
 class FakeProviders:
     """An httpx transport that answers like gold-api.com, Metals.Dev and SoldComps, and records every call."""
 
-    def __init__(self):
+    def __init__(self, stamp: dt.datetime | None = None):
+        self.stamp = stamp  # tests with a fixed "now" give the provider time to match it
         self.calls: list[str] = []
         self.gold_api_status = 200
         self.gold_api_body: dict | None = None
@@ -73,14 +85,14 @@ class FakeProviders:
                 "name": symbol,
                 "price": GOLD[symbol],
                 "symbol": symbol,
-                "updatedAt": self.gold_api_updated.get(symbol, "2026-10-28T15:00:00Z"),
+                "updatedAt": self.gold_api_updated.get(symbol, _iso(self.stamp)),
                 "updatedAtReadable": "a few seconds ago",
             }
             return httpx.Response(200, json=body)
         if url.host == "api.metals.dev":
             if url.path == "/usage":
                 return httpx.Response(
-                    200, json={"status": "success", "timestamp": "2026-10-28T15:00:00Z", "plan": "Free", "total": 100, "used": 7, "remaining": 93}
+                    200, json={"status": "success", "timestamp": _iso(self.stamp), "plan": "Free", "total": 100, "used": 7, "remaining": 93}
                 )
             body = self.metals_dev_body or {
                 "status": "success",
@@ -88,7 +100,7 @@ class FakeProviders:
                 "unit": "toz",
                 "metals": {"gold": 4010.5, "silver": 50.25, "platinum": 1490.0, "palladium": 1105.0, "copper": 0.3},
                 "currencies": {},
-                "timestamps": {"metal": "2026-10-28T15:00:01.000Z", "currency": "2026-10-28T15:00:00.000Z"},
+                "timestamps": {"metal": _iso(self.stamp), "currency": _iso(self.stamp)},
             }
             return httpx.Response(200, json=body)
         if url.host == "metal-sentinel.p.rapidapi.com":
@@ -110,8 +122,8 @@ class FakeProviders:
                 "results": [{
                     "symbol": sym, "currency": url.params.get("currency"), "ask": self.ms_prices[sym] + 1,
                     "mid": self.ms_prices[sym], "bid": self.ms_prices[sym] - 1, "high": 0, "low": 0, "open": 0,
-                    "close": 0, "timestamp": 1793199600, "change": 0, "changePercentage": 0, "unit": "OUNCE",
-                    "originalTime": "2026-10-28T15:00:00Z", "extra": None,
+                    "close": 0, "timestamp": int(_recent(self.stamp).timestamp()), "change": 0, "changePercentage": 0, "unit": "OUNCE",
+                    "originalTime": _iso(self.stamp), "extra": None,
                 }],
             }
             return httpx.Response(200, json=body, headers=headers)
