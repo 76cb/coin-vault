@@ -260,6 +260,7 @@ export interface Spot {
   source: string | null;
   fetched_at: string | null;
   source_timestamp: string | null;
+  price_time: string | null;
   stale: boolean;
 }
 export interface SpotLatest {
@@ -488,7 +489,7 @@ export const api = {
   deleteTag: (id: number) => request<void>("DELETE", `${A}/tags/${id}`),
 
   spotLatest: () => request<SpotLatest>("GET", `${A}/prices/spot/latest`),
-  refreshSpot: () => request<{ ok: boolean; source: string | null; errors: string[]; latest: SpotLatest }>("POST", `${A}/prices/spot/refresh`),
+  refreshSpot: () => request<{ ok: boolean; source: string | null; old_metals: Metal[]; errors: string[]; latest: SpotLatest }>("POST", `${A}/prices/spot/refresh`),
   spotHistory: (metal: Metal, days: number) => request<SpotHistory>("GET", `${A}/prices/spot/history?metal=${metal}&days=${days}`),
   summary: () => request<Summary>("GET", `${A}/portfolio/summary`),
 
@@ -524,7 +525,9 @@ export function compactMoney(v: string | number | null | undefined, currency = "
 /** "3 minutes ago" style, for timestamps in the past. */
 export function ago(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) return "never";
-  const s = Math.round((now - new Date(iso).getTime()) / 1000);
+  // Timestamps without an offset are UTC (SQLite drops it).
+  const t = /[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`;
+  const s = Math.round((now - new Date(t).getTime()) / 1000);
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
   if (Math.abs(s) < 60) return "just now";
   if (Math.abs(s) < 3600) return rtf.format(-Math.round(s / 60), "minute");

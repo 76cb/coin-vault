@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { ago, api, Bucket, compactMoney, Metal, METAL_LABELS, money } from "../api";
+import { ago, api, Bucket, compactMoney, Metal, METAL_LABELS, money, Spot } from "../api";
 import LineChart from "../components/LineChart";
 
 const RANGES: [number, string][] = [
@@ -12,6 +12,11 @@ const RANGES: [number, string][] = [
   [90, "3 months"],
   [365, "Year"],
 ];
+
+/** Prices more than a day old while flagged stale: worth explaining, not just badging. */
+function oldPrices(metals: Spot[]): Spot[] {
+  return metals.filter((m) => m.price && m.stale && m.price_time && Date.now() - new Date(m.price_time).getTime() > 86_400_000);
+}
 
 function toz(v: string | number): string {
   return `${Number(v).toLocaleString(undefined, { maximumFractionDigits: 3 })} ozt`;
@@ -36,6 +41,7 @@ export default function Dashboard() {
   const t = s.totals;
   const cur = s.currency;
   const priced = s.spot.metals.filter((m) => m.price);
+  const old = oldPrices(s.spot.metals);
   const newest = priced.map((m) => m.fetched_at!).sort().at(-1);
   const heldMetals = (Object.keys(METAL_LABELS) as Metal[]).filter((m) => Number(s.pure_toz[m] ?? 0) > 0);
 
@@ -53,6 +59,13 @@ export default function Dashboard() {
         <p className="error" role="alert">Couldn't fetch prices: {refresh.data.errors.join("; ") || "no provider available"}.</p>
       )}
       {refresh.isError && <p className="error" role="alert">{(refresh.error as Error).message}</p>}
+      {old.length > 0 && (
+          <p className="notice">
+            The {old.map((m) => `${METAL_LABELS[m.metal].toLowerCase()} (from ${new Date(m.price_time!).toLocaleDateString(undefined, { month: "short", day: "numeric" })})`).join(" and ")}{" "}
+            {old.length === 1 ? "price is" : "prices are"} out of date, so melt values for {old.length === 1 ? "it" : "them"} are approximate.
+            gold-api.com's platinum and palladium prices have stopped updating; a free Metals.Dev key in <Link to="/settings#providers">Settings</Link> supplies current ones.
+          </p>
+      )}
 
       {priced.length === 0 && (
         <p className="notice">

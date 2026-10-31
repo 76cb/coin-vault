@@ -3,7 +3,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from tests.m2_helpers import FakeProviders
 
@@ -145,3 +145,82 @@ def test_stale_flags(db):
     spot.poll(db, ["USD"], client=fake.client(), now=dt.datetime(2026, 10, 30, 16, 55, tzinfo=NY))
     assert not spot.latest(db, "USD", now=SATURDAY)["Ag"].stale
     assert spot.latest(db, "EUR", now=WEDNESDAY)["Ag"].stale  # never fetched
+
+
+# gold-api.com's platinum and palladium had stopped updating when checked on 2026-10-31
+# (XPT updatedAt 2026-09-17, XPD 2026-10-16) while gold and silver were live.
+OLD = {"XPT": "2026-09-17T13:33:17Z", "XPD": "2026-10-16T11:23:42Z"}
+
+
+def _latest_sources(db):
+    from app.services import spot
+
+    return {m: (l.price.source, l.stale) for m, l in spot.latest(db, "USD", now=WEDNESDAY).items()}
+
+
+def test_old_quotes_are_filled_from_the_backup(db):
+    from app.models import SpotPrice
+    from app.services import providers as psvc
+    from app.services import spot
+
+    _set_key(db, "metals_dev", "md-key")
+    fake = FakeProviders()
+    fake.gold_api_updated = OLD
+    [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
+    assert out.sources == {"Au": "gold_api", "Ag": "gold_api", "Pt": "metals_dev", "Pd": "metals_dev"}
+    assert out.old_metals == []
+    assert _latest_sources(db) == {"Au": ("gold_api", False), "Ag": ("gold_api", False),
+                                   "Pt": ("metals_dev", False), "Pd": ("metals_dev", False)}
+    # gold and silver weren't taken from the backup's answer
+    assert db.scalar(select(SpotPrice.price_per_toz).where(SpotPrice.metal == "Ag", SpotPrice.source == "metals_dev")) is None
+    assert psvc.quota_for(db, psvc.get_config(db, "metals_dev")).used(WEDNESDAY) == 1
+
+
+def test_backup_is_paced_to_last_the_month(db):
+    from app.services import provider_admin
+    from app.services import providers as psvc
+    from app.services import spot
+
+    _set_key(db, "metals_dev", "md-key")
+    fake = FakeProviders()
+    fake.gold_api_updated = OLD
+    # A Test press is free and must not hold back the next real call.
+    provider_admin.check_provider(db, psvc.get_config(db, "metals_dev"), "USD", client=fake.client())
+    md_calls = lambda: sum(1 for c in fake.calls if c == "api.metals.dev/v1/latest")  # noqa: E731
+    spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
+    assert md_calls() == 1
+    # 89 requests left and about 3.5 days to Nov 1: one every ~57 minutes.
+    [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY + dt.timedelta(minutes=15))
+    assert md_calls() == 1 and set(out.sources) == {"Au", "Ag"} and out.old_metals == ["Pd", "Pt"]
+    spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY + dt.timedelta(minutes=70))
+    assert md_calls() == 2
+    # The Refresh button (force) isn't paced; the cap still applies.
+    spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY + dt.timedelta(minutes=75), force=True)
+    assert md_calls() == 3
+
+
+def test_old_price_kept_once_and_flagged_without_backup(db):
+    from app.models import SpotPrice
+    from app.services import spot
+
+    fake = FakeProviders()
+    fake.gold_api_updated = OLD
+    [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
+    assert out.ok and out.old_metals == ["Pd", "Pt"]
+    assert any("old prices" in e for e in out.errors)
+    latest = spot.latest(db, "USD", now=WEDNESDAY)
+    assert latest["Pt"].stale and latest["Pt"].price is not None and not latest["Au"].stale
+    assert latest["Pt"].price_time.date() == dt.date(2026, 9, 17)
+    spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY + dt.timedelta(minutes=15))
+    assert db.scalar(select(func.count()).select_from(SpotPrice).where(SpotPrice.metal == "Pt")) == 1
+    assert db.scalar(select(func.count()).select_from(SpotPrice).where(SpotPrice.metal == "Au")) == 2
+
+
+def test_one_failed_metal_keeps_the_others(db):
+    from app.services import spot
+
+    fake = FakeProviders()
+    fake.gold_api_fail = {"XPD"}
+    [out] = spot.poll(db, ["USD"], client=fake.client(), now=WEDNESDAY)
+    assert set(out.sources) == {"Au", "Ag", "Pt"} and out.old_metals == ["Pd"]
+    assert any("HTTP 500 for XPD" in e for e in out.errors)

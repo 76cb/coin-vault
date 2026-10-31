@@ -41,6 +41,7 @@ class SpotResult:
     quotes: list[SpotQuote]
     cost: int  # quota requests used
     endpoints: list[str] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)  # per-metal failures when others succeeded
 
 
 @dataclass
@@ -89,7 +90,8 @@ CATALOG: dict[str, ProviderInfo] = {
         rate_limited=False,
         docs_url="https://gold-api.com/docs",
         key_url=None,
-        note="Free live prices, no key, updated every 30 seconds. Primary spot source.",
+        note="Free, no key. Primary source: gold and silver are live. Its platinum and palladium prices had stopped updating when checked on Oct 31, 2026 (platinum last Sep 17, palladium Oct 16), so every price's own timestamp is checked "
+        "and out-of-date ones come from Metals.Dev instead.",
         available_from=2,
     ),
     "metals_dev": ProviderInfo(
@@ -104,7 +106,9 @@ CATALOG: dict[str, ProviderInfo] = {
         rate_limited=True,
         docs_url="https://metals.dev/docs",
         key_url="https://metals.dev/pricing",
-        note="Backup spot source. Free plan: 100 requests a month, so it is used only when gold-api.com fails.",
+        note="Backup, and the source of live platinum and palladium prices. Free plan: 100 requests a month. It is only "
+        "called for metals gold-api.com can't supply current prices for, and calls are spread evenly through the month "
+        "(about one every 8 hours with a cap of 90) so the plan lasts.",
         available_from=2,
     ),
     "soldcomps": ProviderInfo(

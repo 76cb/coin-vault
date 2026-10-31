@@ -15,7 +15,7 @@ from app.logging_setup import log
 from app.models import ApiCallLog, ProviderConfig, utcnow
 from app.providers import soldcomps
 from app.providers.base import CATALOG, ProviderError, UsageInfo, http_client
-from app.providers.spot import GOLD_API_BASE, MetalsDev
+from app.providers.spot import SPOT_PROVIDERS, MetalsDev
 from app.services import providers as psvc
 
 
@@ -34,6 +34,28 @@ def fetch_usage(cfg: ProviderConfig, key: str, client: httpx.Client) -> UsageInf
     return None
 
 
+METAL_NAMES = {"Au": "Gold", "Ag": "Silver", "Pt": "Platinum", "Pd": "Palladium"}
+
+
+def _describe_quotes(result, currency: str) -> str:
+    """One line per metal with the price and how old the provider says it is."""
+    now = utcnow()
+    parts, old = [], []
+    for q in result.quotes:
+        ts = q.source_timestamp
+        age = (now - ts) if ts else None
+        when = "time not given" if ts is None else ("live" if age < dt.timedelta(hours=1) else f"last updated {ts:%b %-d}")
+        parts.append(f"{METAL_NAMES.get(q.metal, q.metal)} {q.price_per_toz.normalize():,f} {currency} ({when})")
+        if age is not None and age > dt.timedelta(days=3):
+            old.append(METAL_NAMES.get(q.metal, q.metal).lower())
+    msg = "Working. " + "; ".join(parts) + "."
+    if result.problems:
+        msg += " Failed: " + "; ".join(result.problems) + "."
+    if old:
+        msg += f" The {' and '.join(old)} prices here are old, so the backup provider supplies them when it has a key."
+    return msg
+
+
 def check_provider(db: Session, cfg: ProviderConfig, currency: str, client: httpx.Client | None = None) -> CheckResult:
     info = CATALOG[cfg.provider_key]
     own = client is None
@@ -48,12 +70,8 @@ def check_provider(db: Session, cfg: ProviderConfig, currency: str, client: http
         with psvc.timed() as t:
             try:
                 if cfg.provider_key == "gold_api":
-                    r = client.get(f"{GOLD_API_BASE}/price/XAU/{currency}")
-                    if r.status_code != 200:
-                        raise ProviderError(f"gold-api.com returned HTTP {r.status_code}", r.status_code)
-                    price = r.json().get("price")
                     usage = None
-                    message = f"Working. Gold is {price} {currency} per troy ounce."
+                    message = _describe_quotes(SPOT_PROVIDERS["gold_api"].fetch(client, currency), currency)
                 else:
                     usage = fetch_usage(cfg, key, client)
                     message = "Key accepted."

@@ -16,6 +16,8 @@ class FakeProviders:
         self.calls: list[str] = []
         self.gold_api_status = 200
         self.gold_api_body: dict | None = None
+        self.gold_api_updated: dict[str, str] = {}  # symbol -> updatedAt, to simulate a price that stopped updating
+        self.gold_api_fail: set[str] = set()  # symbols that return HTTP 500
         self.metals_dev_body: dict | None = None
         self.soldcomps_usage: dict | None = None
         self.soldcomps_status = 200
@@ -27,6 +29,8 @@ class FakeProviders:
             if self.gold_api_status != 200:
                 return httpx.Response(self.gold_api_status, text="upstream error")
             _, _, symbol, currency = url.path.split("/")
+            if symbol in self.gold_api_fail:
+                return httpx.Response(500, text="upstream error")
             body = self.gold_api_body or {
                 "currency": currency,
                 "currencySymbol": "$",
@@ -34,7 +38,7 @@ class FakeProviders:
                 "name": symbol,
                 "price": GOLD[symbol],
                 "symbol": symbol,
-                "updatedAt": "2026-10-28T15:00:00Z",
+                "updatedAt": self.gold_api_updated.get(symbol, "2026-10-28T15:00:00Z"),
                 "updatedAtReadable": "a few seconds ago",
             }
             return httpx.Response(200, json=body)

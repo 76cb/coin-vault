@@ -3,6 +3,9 @@
 gold-api.com  https://gold-api.com/llms.txt
     GET https://api.gold-api.com/price/{symbol}/{currency}  (no key, no rate limit; cache 30 s)
     -> {"currency","price","symbol","updatedAt", ...}
+    Symbols (GET /symbols): XAU, XAG, XPT, XPD, HG, BTC, ETH. Checked 2026-10-31: XAU and XAG were
+    live, but XPT's updatedAt was 2026-09-17 and XPD's 2026-10-16, so updatedAt is checked on every
+    quote and old ones are filled from the backup provider (see services/spot.py).
 Metals.Dev    https://metals.dev/docs
     GET https://api.metals.dev/v1/latest?api_key=&currency=&unit=toz  (one call, all metals)
     -> {"status","currency","unit","metals":{"gold","silver","platinum","palladium",...},"timestamps":{"metal"}}
@@ -38,20 +41,31 @@ class GoldApi:
     def fetch(self, client: httpx.Client, currency: str, api_key: str | None = None) -> SpotResult:
         quotes: list[SpotQuote] = []
         endpoints: list[str] = []
+        problems: list[ProviderError] = []
+        # One call per metal; a failure on one metal doesn't throw away the others.
         for metal, symbol in METAL_SYMBOLS.items():
             path = f"/price/{symbol}/{currency}"
             endpoints.append(path)
             try:
-                r = client.get(GOLD_API_BASE + path)
-            except httpx.HTTPError as exc:
-                raise ProviderError(f"{type(exc).__name__} calling gold-api.com") from exc
-            if r.status_code != 200:
-                raise ProviderError(f"gold-api.com returned HTTP {r.status_code} for {symbol}", r.status_code)
-            data = r.json()
-            if str(data.get("currency", currency)).upper() != currency.upper():
-                raise ProviderError(f"gold-api.com answered in {data.get('currency')} instead of {currency}")
-            quotes.append(SpotQuote(metal, currency, _decimal(data.get("price")), parse_ts(data.get("updatedAt"))))
-        return SpotResult(quotes=quotes, cost=0, endpoints=endpoints)
+                quotes.append(self._one(client, path, metal, symbol, currency))
+            except ProviderError as exc:
+                problems.append(exc)
+        if not quotes:
+            raise problems[0]
+        return SpotResult(quotes=quotes, cost=0, endpoints=endpoints, problems=[str(p) for p in problems])
+
+    @staticmethod
+    def _one(client: httpx.Client, path: str, metal: str, symbol: str, currency: str) -> SpotQuote:
+        try:
+            r = client.get(GOLD_API_BASE + path)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"{type(exc).__name__} calling gold-api.com") from exc
+        if r.status_code != 200:
+            raise ProviderError(f"gold-api.com returned HTTP {r.status_code} for {symbol}", r.status_code)
+        data = _json(r)
+        if str(data.get("currency", currency)).upper() != currency.upper():
+            raise ProviderError(f"gold-api.com answered in {data.get('currency')} instead of {currency}")
+        return SpotQuote(metal, currency, _decimal(data.get("price")), parse_ts(data.get("updatedAt")))
 
 
 class MetalsDev:

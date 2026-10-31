@@ -42,6 +42,7 @@ class SpotOut(BaseModel):
     source: str | None
     fetched_at: dt.datetime | None
     source_timestamp: dt.datetime | None
+    price_time: dt.datetime | None  # when the market set this price (source timestamp, else fetch time)
     stale: bool
 
 
@@ -70,6 +71,7 @@ def _latest(db: Session, currency: str) -> SpotLatestOut:
                 source=l.price.source if l.price else None,
                 fetched_at=l.price.fetched_at if l.price else None,
                 source_timestamp=l.price.source_timestamp if l.price else None,
+                price_time=l.price_time,
                 stale=l.stale,
             )
             for m, l in data.items()
@@ -85,6 +87,7 @@ def spot_latest(principal: Principal = Depends(read_prices), db: Session = Depen
 class RefreshOut(BaseModel):
     ok: bool
     source: str | None
+    old_metals: list[str]
     errors: list[str]
     latest: SpotLatestOut
 
@@ -93,7 +96,7 @@ class RefreshOut(BaseModel):
 def spot_refresh(principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
     currency = principal.user.base_currency
     [outcome] = spot_svc.poll(db, [currency], force=True)
-    return RefreshOut(ok=outcome.ok, source=outcome.source, errors=outcome.errors, latest=_latest(db, currency))
+    return RefreshOut(ok=outcome.ok, source=outcome.source, old_metals=outcome.old_metals, errors=outcome.errors, latest=_latest(db, currency))
 
 
 class PricePoint(BaseModel):

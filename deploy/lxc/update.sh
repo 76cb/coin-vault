@@ -36,6 +36,9 @@ if [[ "${1:-}" != "--no-pull" ]]; then
   BEFORE="$(git rev-parse HEAD)"
   git merge --ff-only "@{u}"
   echo "    $BEFORE -> $(git rev-parse HEAD)"
+  # Bash keeps running the copy of this script it started with, so hand over to the
+  # version just pulled; otherwise new update steps would only run on the next update.
+  exec "$APP_DIR/deploy/lxc/update.sh" --no-pull
 fi
 
 ensure_encryption_key

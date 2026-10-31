@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import time
 from contextlib import contextmanager
 
@@ -86,9 +87,11 @@ def log_call(
     cost: int = 0,
     duration_ms: int | None = None,
     detail: str | None = None,
+    at: dt.datetime | None = None,
 ) -> None:
     db.add(
         ApiCallLog(
+            **({"at": at} if at is not None else {}),
             provider_key=provider_key,
             endpoint=endpoint[:120],
             context=(context or None) and context[:200],

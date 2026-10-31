@@ -139,7 +139,7 @@ def test_metals_dev_and_gold_api_test(api, fake):
     r = api.post("/api/v1/settings/providers/metals_dev/test").json()
     assert r["ok"] and r["provider"]["usage"]["used"] == 7
     g = api.post("/api/v1/settings/providers/gold_api/test").json()
-    assert g["ok"] and "4000" in g["message"]
+    assert g["ok"] and "Gold 4,000 USD" in g["message"]
     assert api.post("/api/v1/settings/providers/soldcomps/test").json()["message"] == "No API key saved yet."
 
 
