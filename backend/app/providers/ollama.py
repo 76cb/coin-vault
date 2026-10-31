@@ -3,7 +3,7 @@
 Only these documented endpoints are used:
   GET  /api/version  -> {"version": "0.5.1"}
   GET  /api/tags     -> {"models": [{"name", "model", "size", "details": {"parameter_size", "quantization_level", ...}}]}
-  POST /api/show     {"model"} -> {..., "capabilities": ["completion", "vision"]}
+  POST /api/show     {"model"} -> {..., "capabilities": ["completion", "vision"], "thinking": {"values": [...], "default": ...}}
   POST /api/chat     {"model", "messages": [{"role", "content", "images": [base64]}], "format": <JSON schema>,
                       "stream": false, "options": {"temperature", "num_ctx"}, "keep_alive"}
                      -> {"message": {"role": "assistant", "content": "..."}, "done": true, "total_duration", "load_duration", ...}
@@ -114,6 +114,30 @@ def models(c: httpx.Client, base: str) -> list[OllamaModel]:
     return out
 
 
+_THINK: dict[tuple[str, str], bool | str | None] = {}
+
+
+def think_setting(c: httpx.Client, base: str, model: str) -> bool | str | None:
+    """The least thinking a model allows (https://docs.ollama.com/capabilities/thinking): false when it can be
+    turned off, else its first listed level; None when the model has no thinking setting (send nothing).
+    Reading a date or a label doesn't need long reasoning, and thinking can multiply the wait."""
+    key = (base, model)
+    if key not in _THINK:
+        try:
+            t = _send(c, "POST", f"{base}/api/show", "describe a model", {"model": model}).get("thinking")
+        except OllamaError:
+            return None  # the chat call reports the real problem
+        values = t.get("values") if isinstance(t, dict) else None
+        setting: bool | str | None = None
+        if isinstance(values, list):
+            if False in values:
+                setting = False
+            else:
+                setting = next((v for v in values if isinstance(v, str)), None)
+        _THINK[key] = setting
+    return _THINK[key]
+
+
 @dataclass
 class ChatResult:
     data: dict[str, Any]
@@ -136,6 +160,9 @@ def chat_json(
         "options": {"temperature": 0, "num_ctx": NUM_CTX},
         "keep_alive": KEEP_ALIVE,
     }
+    think = think_setting(c, base, model)
+    if think is not None:
+        body["think"] = think
     data = _send(c, "POST", f"{base}/api/chat", "look at the photos", body)
     content = ((data.get("message") or {}).get("content") or "").strip()
     try:

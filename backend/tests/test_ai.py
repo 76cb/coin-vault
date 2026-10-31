@@ -48,10 +48,12 @@ class FakeOllama:
         if p == "/api/tags":
             return httpx.Response(200, json={"models": self.models})
         if p == "/api/show":
+            if body["model"].startswith("qwen"):
+                return httpx.Response(200, json={"capabilities": ["completion", "vision", "thinking"], "thinking": {"values": [False, True], "default": True}})
             caps = ["completion", "vision"] if body["model"].startswith("gemma") else ["completion"]
             return httpx.Response(200, json={"capabilities": caps, "details": {}})
         if p == "/api/chat":
-            if body["model"] != "gemma4:26b":
+            if body["model"] not in ("gemma4:26b", "qwen3.8:27b"):
                 return httpx.Response(404, json={"error": f"model '{body['model']}' not found"})
             content = self.answer if isinstance(self.answer, str) else json.dumps(self.answer)
             return httpx.Response(200, json={
@@ -234,3 +236,25 @@ def test_parse_identified_is_careful():
     assert i.mint_mark is None
     i = parse_identified({**SLAB, "holder": {**SLAB["holder"], "service": "NGC", "pcgs_number": "123"}})
     assert i.holder.pcgs_number is None  # only PCGS labels carry PCGS numbers
+
+
+def test_thinking_is_turned_down(api, fake, images, monkeypatch):
+    import app.providers.ollama as o
+
+    monkeypatch.setattr(o, "_THINK", {})
+    item, photos = item_with_photos(api, images, seeds=(81, 82))
+    refs = [{"sha256": p["sha256"], "role": p["role"]} for p in photos]
+    setup_ai(api)
+    assert api.post("/api/v1/ai/identify", json={"photos": refs}).status_code == 200
+    assert "think" not in fake.calls[-1][1]  # no thinking setting: nothing sent
+    api.put("/api/v1/ai/settings", json={"url": "http://192.168.1.80:11434", "model": "qwen3.8:27b"})
+    assert api.post("/api/v1/ai/identify", json={"photos": refs}).status_code == 200
+    assert fake.calls[-1][1]["think"] is False
+
+    # a model with levels only gets its first (lowest) level
+    o._THINK.clear()
+
+    class Levels:
+        def request(self, method, url, json=None):
+            return httpx.Response(200, json={"thinking": {"values": ["low", "medium", "high"], "default": "medium"}}, request=httpx.Request(method, url))
+    assert o.think_setting(Levels(), "http://x:11434", "gpt-oss:20b") == "low"
