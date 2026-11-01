@@ -350,12 +350,14 @@ def fill_base_metal(item: Item) -> None:
 
 def fill_goldback_gold(db: Session, item: Item) -> None:
     """A Goldback's gold follows from its denomination (1/1000 troy oz per Goldback), so it's set, not typed."""
-    from app.services.goldbacks import gold_toz
+    from app.services.goldbacks import FINENESS, gold_grams, gold_toz
 
     if item.item_type != "goldback":
         return
-    oz = gold_toz(item.goldback.denomination if item.goldback is not None else None)
-    rows = [MetalContentIn(metal="Au", pure_toz=oz)] if oz else []
+    denom = item.goldback.denomination if item.goldback is not None else None
+    oz = gold_toz(denom)
+    # the gold layer's weight and fineness for the record; the pure gold is the stated 1/1000 oz per Goldback
+    rows = [MetalContentIn(metal="Au", gross_weight_g=gold_grams(denom), fineness=FINENESS, pure_toz=oz)] if oz else []
     _apply_metal_content(db, item, rows)
 
 

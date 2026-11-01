@@ -30,6 +30,7 @@ test("pick Goldbacks by series and denomination, then see the count", async ({ p
   await page.goto(`/?type=goldback&q=${encodeURIComponent(series)}`);
   await page.getByRole("link", { name: `${series} Goldback 5` }).first().click();
   await expect(page.locator(".item-facts")).toContainText("2 pieces");
+  await expect(page.locator("table.figures").first()).toContainText("0.9999");
   await expect(page.locator("table.figures").first()).toContainText("0.005");
 });
 
@@ -41,5 +42,5 @@ test("the title reader knows Goldbacks", async ({ page }) => {
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("2021 Nevada Goldback 1/2");
   await expect(page.getByLabel("State or series")).toHaveValue("Nevada");
   await expect(page.getByLabel("Denomination (Goldbacks)")).toHaveValue("0.5");
-  await expect(page.getByText("0.0005 troy oz of 24-karat gold per note")).toBeVisible();
+  await expect(page.getByText("0.0005 troy oz of .9999 gold per note")).toBeVisible();
 });

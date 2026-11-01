@@ -19,6 +19,9 @@ def test_a_goldback_gets_its_gold_from_its_denomination(api):
     assert r.status_code == 201, r.text
     it = r.json()
     assert [(m["metal"], Decimal(m["pure_toz"])) for m in it["metal_content"]] == [("Au", Decimal("0.005"))]
+    m = it["metal_content"][0]
+    assert Decimal(m["fineness"]) == Decimal("0.9999") and Decimal(m["gross_weight_g"]) == Decimal("0.155517")  # 0.005 oz in grams
+    assert it["values"] is None or it["values"]["pure_toz_total"]["Au"] in ("0.020000", "0.02")
     # changing the denomination changes the gold
     r = api.patch(f"/api/v1/items/{it['id']}", json={"details": {"denomination": "25"}}, headers={"If-Match": str(it["version"])})
     assert Decimal(r.json()["metal_content"][0]["pure_toz"]) == Decimal("0.025")

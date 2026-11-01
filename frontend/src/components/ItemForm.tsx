@@ -620,8 +620,8 @@ export default function ItemForm({
         {f.item_type === "goldback" ? (
           <p className="muted">
             {f.details.denomination
-              ? `${(Number(f.details.denomination) / 1000).toLocaleString(undefined, { maximumFractionDigits: 6 })} troy oz of 24-karat gold per note, worked out from the denomination (1/1000 oz per Goldback).`
-              : "The gold is worked out from the denomination: 1/1000 troy oz per Goldback."}
+              ? `${(Number(f.details.denomination) / 1000).toLocaleString(undefined, { maximumFractionDigits: 6 })} troy oz of .9999 gold per note, worked out from the denomination (1/1000 oz per Goldback).`
+              : "Choose the denomination above so its gold counts in your totals: 1/1000 troy oz per Goldback."}
           </p>
         ) : (<>
         {f.metals.length === 0 && f.item_type !== "lot" && <p className="muted">Add the metal so melt value can be worked out from spot price.</p>}

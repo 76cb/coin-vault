@@ -10,6 +10,8 @@ from decimal import Decimal
 
 SOURCE = "https://en.wikipedia.org/wiki/Goldback"
 OZT_PER_GOLDBACK = Decimal("0.001")
+FINENESS = Decimal("0.9999")  # 24-karat; dealers list them as .9999 gold (e.g. https://www.moneymetals.com/nevada-goldback-gold-note-bundle/1008)
+GRAMS_PER_TOZ = Decimal("31.1034768")
 
 # denominations in Goldbacks; 1/4 and 3 exist but are uncommon
 DENOMINATIONS: list[Decimal] = [Decimal(v) for v in ("0.25", "0.5", "1", "2", "3", "5", "10", "25", "50", "100")]
@@ -26,6 +28,12 @@ SERIES: list[tuple[str, int]] = [
 def gold_toz(denomination: Decimal | None) -> Decimal | None:
     """Troy ounces of gold in one note of this denomination."""
     return None if denomination is None else (Decimal(denomination) * OZT_PER_GOLDBACK).quantize(Decimal("0.000001"))
+
+
+def gold_grams(denomination: Decimal | None) -> Decimal | None:
+    """The gold layer's weight in grams for one note."""
+    oz = gold_toz(denomination)
+    return None if oz is None else (oz * GRAMS_PER_TOZ).quantize(Decimal("0.000001"))
 
 
 def denomination_label(d: Decimal | float | str | None) -> str:
