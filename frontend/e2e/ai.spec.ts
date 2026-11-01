@@ -130,7 +130,7 @@ test("AI on a bulk upload: use its title, or fill in every detail on Add item", 
   await page.getByRole("link", { name: "Upload photos" }).first().click();
   await page.locator(".dropzone input[type=file]").setInputFiles([own("0007_obv.jpg", tag), own("0007_rev.jpg", tag)].map((f, i) => ({ ...f, name: `${tag}_${i ? "rev" : "obv"}.jpg` })));
   const card = page.locator(".group-card", { hasText: `${tag}_obv.jpg` });
-  await expect(card).toBeVisible();
+  await expect(card).toBeVisible({ timeout: 30_000 }); // photos are checked and resized on upload: slow on a busy CI runner
 
   await card.getByRole("button", { name: "Identify from the photos" }).click();
   await expect(card.locator(".ai-holder")).toContainText("In a PCGS holder, graded PR70 DCAM, cert 3257-3628, PCGS #382795.");
