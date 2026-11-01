@@ -23,7 +23,7 @@ SLAB = {
                "label_text": "2015-S 25C Bombay Hook NP, Silver PR70DCAM PCGS 32573628"},
 }
 GRADE = {"low": "VF 30", "high": "vf20", "summary": "Moderate wear on the high points.", "wear": "Hair and eagle breast worn.",
-         "surfaces": "Even grey toning.", "problems": [], "photo_advice": ""}
+         "surfaces": "Even grey toning.", "marks": ["small tick on the cheek", ""], "problems": [], "photo_advice": ""}
 
 
 class FakeOllama:
@@ -220,8 +220,11 @@ def test_grade_gives_a_tidy_range(api, fake, images):
     g = r.json()
     assert (g["low"], g["high"], g["low_number"], g["high_number"]) == ("VF20", "VF30", 20, 30)
     assert g["summary"] == "Moderate wear on the high points." and g["problems"] == [] and g["photo_advice"] is None
+    assert g["marks"] == ["small tick on the cheek"]
     prompt = fake.calls[-1][1]["messages"][1]["content"]
     assert "raw (not slabbed)" in prompt and "Don't call anything counterfeit" in prompt
+    assert "The owner's record says this is a coin: Quarter." in prompt  # judged against coins of its kind
+    assert "bullion coins usually leave the mint at MS67 to MS70" in prompt
 
     fake.answer = {**GRADE, "low": "about uncirculated", "high": "nice"}
     assert api.post("/api/v1/ai/grade", json={"photos": refs}).status_code == 502

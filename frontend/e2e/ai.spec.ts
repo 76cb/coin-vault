@@ -83,7 +83,7 @@ test("identify an item from its photos, fill the blanks, and suggest a grade", a
   await page.route("**/api/v1/ai/grade", (route) => route.fulfill({
     json: {
       model: "gemma4:26b", seconds: 5.1, low: "VF20", high: "VF30", low_number: 20, high_number: 30,
-      summary: "Moderate, even wear.", wear: "Hair above the ear is worn flat.", surfaces: "Grey toning.", problems: [],
+      summary: "Moderate, even wear.", wear: "Hair above the ear is worn flat.", surfaces: "Grey toning.", marks: [], problems: [],
       photo_advice: "An angled shot would show any luster left.",
     },
   }));

@@ -166,6 +166,7 @@ export function AiGradeGuess({ photos, itemId, onNote }: { photos: AiPhotoRef[];
           <dl className="ai-grade-notes">
             {g.wear && (<><dt>Wear</dt><dd>{g.wear}</dd></>)}
             {g.surfaces && (<><dt>Surfaces</dt><dd>{g.surfaces}</dd></>)}
+            {g.high_number >= 60 && (<><dt>Marks</dt><dd>{g.marks?.length ? g.marks.join("; ") : "None seen"}</dd></>)}
             <dt>Problems</dt>
             <dd>{g.problems.length ? g.problems.join("; ") : "None seen"}</dd>
             {g.photo_advice && (<><dt>Better photos</dt><dd>{g.photo_advice}</dd></>)}

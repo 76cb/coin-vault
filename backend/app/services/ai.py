@@ -287,17 +287,20 @@ GRADE_SYSTEM = (
     "only with the JSON asked for."
 )
 
-GRADE_PROMPT = """{photos}
+GRADE_PROMPT = """{photos}{context}
 
 Estimate the grade of this raw (not slabbed) coin from its photos. Photos can hide or exaggerate wear and marks, so give a range, not one grade, but keep it tight: two neighbouring grades on the usual scale (like VF20 and VF30, or MS62 and MS63), wider only when the photos really can't tell.
 
 Grade the wear and surfaces only. Don't judge whether the coin is genuine: photos can't show that, and lettering that looks crowded or run together (like IN GOD WE TRUST on a Washington quarter) is usually just how the design was engraved. Don't call anything counterfeit, fake or an error.
+
+For a coin with no wear (mint state), the grade comes from its marks, luster and strike, judged against coins of its kind. First list each mark you can actually see and where it is. As a guide: MS70, no marks even under magnification; MS69, one or two tiny marks; MS67 to MS68, a few small marks away from the main design; MS65 to MS66, several small marks or one you notice straight away; MS63 to MS64, many marks or some in prominent places; MS60 to MS62, heavy marks or dull, broken luster. Modern coins (from about 1980) and bullion coins usually leave the mint at MS67 to MS70, so grade one of those lower only for marks you've listed.
 
 Fill in:
 - low and high: Sheldon grades with their prefix, like "VF20" and "VF30", or "MS62" and "MS64". Prefixes: P, FR, AG, G, VG, F, VF, EF, AU, MS, and PR for proofs.
 - summary: one sentence on the grade, in plain words.
 - wear: what the high points show.
 - surfaces: luster, marks, toning.
+- marks: each mark you can see, with where it is, like "small tick on the cheek". An empty list if you see none.
 - problems: damage that would make it a "Details" grade (cleaning, scratches, rim damage, corrosion, holes, tooling). An empty list if you see none.
 - photo_advice: what other photos would help settle the grade, like an angled shot to show luster. Empty if the photos are good enough."""
 
@@ -309,10 +312,11 @@ GRADE_SCHEMA: dict[str, Any] = {
         "summary": {"type": "string"},
         "wear": {"type": "string"},
         "surfaces": {"type": "string"},
+        "marks": {"type": "array", "items": {"type": "string"}},
         "problems": {"type": "array", "items": {"type": "string"}},
         "photo_advice": {"type": "string"},
     },
-    "required": ["low", "high", "summary", "wear", "surfaces", "problems", "photo_advice"],
+    "required": ["low", "high", "summary", "wear", "surfaces", "marks", "problems", "photo_advice"],
 }
 
 GRADE_RE = re.compile(r"\b(PO|P|FR|AG|G|VG|F|VF|EF|XF|AU|MS|PR|PF|SP)[\s-]?(\d{1,2})\b", re.I)
@@ -342,6 +346,7 @@ class GradeGuess:
     summary: str
     wear: str | None
     surfaces: str | None
+    marks: list[str]
     problems: list[str]
     photo_advice: str | None
     seconds: float = 0.0
@@ -362,15 +367,31 @@ def parse_grade(d: dict[str, Any]) -> GradeGuess:
         expected = _prefix_for(g[1], proof)
         return g[0] if re.sub(r"\d", "", g[0]) == expected else f"{expected}{g[1]}"
     problems = [_s(p, 200) for p in (d.get("problems") or []) if _s(p)][:8]
+    marks = [_s(m, 200) for m in (d.get("marks") or []) if _s(m)][:12]
     return GradeGuess(
         low=tidy(lo), high=tidy(hi), low_number=lo[1], high_number=hi[1], summary=_s(d.get("summary"), 400),
-        wear=_s(d.get("wear"), 600) or None, surfaces=_s(d.get("surfaces"), 600) or None, problems=problems,
+        wear=_s(d.get("wear"), 600) or None, surfaces=_s(d.get("surfaces"), 600) or None, marks=marks, problems=problems,
         photo_advice=_s(d.get("photo_advice"), 400) or None,
     )
 
 
-def suggest_grade(db: Session, srcs: list[Source]) -> GradeGuess:
-    r = _ask(db, GRADE_SYSTEM, GRADE_PROMPT.format(photos=_photo_list(srcs)), srcs, GRADE_SCHEMA)
+def grade_context(item: Item | None) -> str:
+    """What the owner's record says the coin is, so it's judged against coins of its kind."""
+    if item is None:
+        return ""
+    c = item.coin
+    bits = [item.title]
+    if c is not None:
+        bits += [x for x in (c.product_line, c.series, c.country) if x and x.lower() not in item.title.lower()]
+        if c.year and str(c.year) not in item.title:
+            bits.append(f"dated {c.year}")
+    kind = "a bullion coin" if item.item_type == "bullion" else "a coin"
+    return f"\nThe owner's record says this is {kind}: {', '.join(bits)}."
+
+
+def suggest_grade(db: Session, srcs: list[Source], item: Item | None = None) -> GradeGuess:
+    prompt = GRADE_PROMPT.format(photos=_photo_list(srcs), context=grade_context(item))
+    r = _ask(db, GRADE_SYSTEM, prompt, srcs, GRADE_SCHEMA)
     g = parse_grade(r.data)
     g.seconds = r.seconds
     return g

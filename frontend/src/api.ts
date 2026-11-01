@@ -533,6 +533,7 @@ export interface AiGrade {
   summary: string;
   wear: string | null;
   surfaces: string | null;
+  marks?: string[];
   problems: string[];
   photo_advice: string | null;
 }

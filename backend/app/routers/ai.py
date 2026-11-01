@@ -168,6 +168,7 @@ class GradeOut(BaseModel):
     summary: str
     wear: str | None
     surfaces: str | None
+    marks: list[str]
     problems: list[str]
     photo_advice: str | None
 
@@ -256,5 +257,6 @@ def identify(body: PhotosIn, principal: Principal = Depends(read_items), db: Ses
 def grade(body: PhotosIn, principal: Principal = Depends(read_items), db: Session = Depends(get_db)):
     """A rough grade range for a raw coin from its photos. A guess to guide you, not a grade."""
     srcs = _sources(db, principal, body)
-    g = _run(lambda: ai.suggest_grade(db, srcs))
+    item = item_svc.get_item(db, principal, body.item_id) if body.item_id is not None else None
+    g = _run(lambda: ai.suggest_grade(db, srcs, item))
     return GradeOut(model=ai.configured(db)[1], **{**g.__dict__, "seconds": round(g.seconds, 1)})  # type: ignore[index]
