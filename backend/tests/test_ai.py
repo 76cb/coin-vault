@@ -220,7 +220,8 @@ def test_grade_gives_a_tidy_range(api, fake, images):
     g = r.json()
     assert (g["low"], g["high"], g["low_number"], g["high_number"]) == ("VF20", "VF30", 20, 30)
     assert g["summary"] == "Moderate wear on the high points." and g["problems"] == [] and g["photo_advice"] is None
-    assert "raw (not slabbed)" in fake.calls[-1][1]["messages"][1]["content"]
+    prompt = fake.calls[-1][1]["messages"][1]["content"]
+    assert "raw (not slabbed)" in prompt and "Don't call anything counterfeit" in prompt
 
     fake.answer = {**GRADE, "low": "about uncirculated", "high": "nice"}
     assert api.post("/api/v1/ai/grade", json={"photos": refs}).status_code == 502

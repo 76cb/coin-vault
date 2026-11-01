@@ -125,7 +125,8 @@ def _s(v: Any, limit: int = 200) -> str:
 IDENTIFY_SYSTEM = (
     "You identify coins, bullion, bars and banknotes from photos for a collector's inventory. Read what is actually "
     "struck or printed: legends, dates, mint marks, denominations, and any grading holder's label. Never guess a date, "
-    "mint mark or number you can't read; leave it empty instead. Answer only with the JSON asked for."
+    "mint mark or number you can't read; leave it empty instead. Don't judge whether a piece is genuine: photos can't show "
+    "that, and crowded or run-together lettering is usually how the design was engraved. Answer only with the JSON asked for."
 )
 
 IDENTIFY_PROMPT = """{photos}
@@ -288,12 +289,16 @@ GRADE_SYSTEM = (
 
 GRADE_PROMPT = """{photos}
 
-Estimate the grade of this raw (not slabbed) coin from its photos. Photos can hide or exaggerate wear and marks, so give a range, not one grade. Fill in:
+Estimate the grade of this raw (not slabbed) coin from its photos. Photos can hide or exaggerate wear and marks, so give a range, not one grade, but keep it tight: two neighbouring grades on the usual scale (like VF20 and VF30, or MS62 and MS63), wider only when the photos really can't tell.
+
+Grade the wear and surfaces only. Don't judge whether the coin is genuine: photos can't show that, and lettering that looks crowded or run together (like IN GOD WE TRUST on a Washington quarter) is usually just how the design was engraved. Don't call anything counterfeit, fake or an error.
+
+Fill in:
 - low and high: Sheldon grades with their prefix, like "VF20" and "VF30", or "MS62" and "MS64". Prefixes: P, FR, AG, G, VG, F, VF, EF, AU, MS, and PR for proofs.
 - summary: one sentence on the grade, in plain words.
 - wear: what the high points show.
 - surfaces: luster, marks, toning.
-- problems: anything that would make it a "Details" grade (cleaning, scratches, rim damage, corrosion, holes, tooling). An empty list if you see none.
+- problems: damage that would make it a "Details" grade (cleaning, scratches, rim damage, corrosion, holes, tooling). An empty list if you see none.
 - photo_advice: what other photos would help settle the grade, like an angled shot to show luster. Empty if the photos are good enough."""
 
 GRADE_SCHEMA: dict[str, Any] = {
