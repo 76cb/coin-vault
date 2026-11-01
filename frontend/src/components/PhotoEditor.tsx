@@ -1,7 +1,7 @@
 import { KeyboardEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, Photo, ROLE_LABELS } from "../api";
-import { Background, centredCrop, circleCut, colour, Crop, cropped, Edits, frame, fromSaved, isEdited, NO_EDITS, toSaved, Tuning } from "../photoEdit";
+import { Background, centredCrop, circleCut, colour, Corners, Crop, cropped, Edits, frame, fromSaved, isConvex, isEdited, NO_EDITS, toSaved, Tuning, warp } from "../photoEdit";
 
 const PREVIEW_EDGE = 1100;
 const MIN = 0.04; // smallest crop side, as a fraction of the frame
@@ -28,6 +28,8 @@ const SLIDERS: { key: Tuning; label: string; min: number }[] = [
 type Handle = "move" | "nw" | "ne" | "sw" | "se";
 
 const BACKGROUNDS: [Background, string][] = [["clear", "Clear"], ["white", "White"], ["black", "Black"]];
+const START_CORNERS: Corners = [[0.12, 0.12], [0.88, 0.12], [0.88, 0.88], [0.12, 0.88]];
+const CORNER_NAMES = ["top-left", "top-right", "bottom-right", "bottom-left"];
 
 /** Crop, straighten, turn and adjust a photo. The original file is kept; Save stores the settings. */
 export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo: Photo; title: string; onClose: () => void; onSaved: () => Promise<void> }) {
@@ -37,7 +39,9 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
   const [edits, setEdits] = useState<Edits>(() => fromSaved(photo.edits));
   const [tab, setTab] = useState<"crop" | "adjust">("crop");
   const [shape, setShape] = useState<Shape>(() => (photo.edits?.circle ? "circle" : "free"));
-  const [finding, setFinding] = useState(false);
+  const [finding, setFinding] = useState<"coin" | "slab" | null>(null);
+  const [tilting, setTilting] = useState(false);
+  const [tiltBefore, setTiltBefore] = useState<{ perspective: Corners | null; crop: Crop | null } | null>(null);
   const [findNote, setFindNote] = useState<string | null>(null);
   const [comparing, setComparing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,10 +60,13 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
   }, [photo]);
 
   // the frame: quarter turns, mirror and straighten; recomputed only when those change
-  const geometry = useMemo(
+  const base = useMemo(
     () => (source ? frame(source, { ...NO_EDITS, rotate: edits.rotate, flip: edits.flip, straighten: edits.straighten }, PREVIEW_EDGE) : null),
     [source, edits.rotate, edits.flip, edits.straighten],
   );
+  // then the tilt correction (not while its corners are being placed: that shows the untilted frame)
+  const corners = tilting ? null : edits.perspective;
+  const geometry = useMemo(() => (base && corners ? warp(base, corners) : base), [base, corners]);
 
   // draw: the whole frame while cropping, the cropped photo while adjusting; colour on both
   useEffect(() => {
@@ -69,6 +76,9 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
       let out: HTMLCanvasElement;
       if (comparing && source) {
         out = frame(source, NO_EDITS, PREVIEW_EDGE);
+      } else if (tilting && base) {
+        out = cropped(base, null);
+        colour(out, edits);
       } else {
         out = tab === "adjust" ? cropped(geometry, edits.crop) : cropped(geometry, null);
         colour(out, edits);
@@ -83,7 +93,7 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
       ctx.drawImage(out, 0, 0, target.width, target.height);
     });
     return () => cancelAnimationFrame(id);
-  }, [geometry, edits, tab, comparing, source]);
+  }, [geometry, base, tilting, edits, tab, comparing, source]);
 
   const fw = geometry?.width ?? 1;
   const fh = geometry?.height ?? 1;
@@ -101,25 +111,59 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
 
   // the server looks for the coin's rim in the frame as turned now, and gives back a square around it
   const findCoin = async () => {
-    setFinding(true);
+    setFinding("coin");
     setFindNote(null);
     try {
-      const { crop: found } = await api.findCoin(photo.id, { rotate: edits.rotate, flip: edits.flip, straighten: edits.straighten });
+      const { crop: found } = await api.findCoin(photo.id, { rotate: edits.rotate, flip: edits.flip, straighten: edits.straighten, perspective: edits.perspective });
       if (shape !== "circle" && shape !== "square") setShape("circle");
       set({ crop: found, circle: shape === "square" ? edits.circle : true });
       setFindNote("Found it. Drag the circle if it's not quite right.");
     } catch (err) {
       setFindNote((err as Error).message);
     } finally {
-      setFinding(false);
+      setFinding(null);
     }
   };
 
+  // ...and for a holder's four corners, which become the tilt correction: the slab, squared up, fills the frame
+  const findSlab = async () => {
+    setFinding("slab");
+    setFindNote(null);
+    try {
+      const { perspective } = await api.findSlab(photo.id, { rotate: edits.rotate, flip: edits.flip, straighten: edits.straighten });
+      setTilting(false);
+      setShape("free");
+      set({ perspective, crop: null, circle: false });
+      setFindNote("Found the holder and squared it up. If a corner's off, use Adjust tilt and drag it.");
+    } catch (err) {
+      setFindNote((err as Error).message);
+    } finally {
+      setFinding(null);
+    }
+  };
+
+  const startTilt = () => {
+    setTiltBefore({ perspective: edits.perspective, crop: edits.crop });
+    setTilting(true);
+    setFindNote(null);
+    if (!edits.perspective) set({ perspective: START_CORNERS });
+  };
+  const endTilt = (keep: boolean) => {
+    if (!keep && tiltBefore) set(tiltBefore);
+    else if (keep) {
+      set({ crop: null, circle: false }); // the frame is a new shape: the crop starts again
+      setShape("free");
+    }
+    setTilting(false);
+    setTiltBefore(null);
+  };
   const turn = (by: 90 | -90) => {
     const rotate = (((edits.rotate + by) % 360) + 360) % 360 as Edits["rotate"];
     // the frame's shape changes, so the crop starts again (in the chosen shape)
-    const [nw, nh] = rotate % 180 === edits.rotate % 180 ? [fw, fh] : [fh, fw];
-    set({ rotate, crop: ratio && shape !== "original" ? centredCrop(nw, nh, ratio) : null });
+    const [bw, bh] = [base?.width ?? fw, base?.height ?? fh];
+    const [nw, nh] = rotate % 180 === edits.rotate % 180 ? [bw, bh] : [bh, bw];
+    // tilt corners belong to the frame as it was turned, so they go too
+    set({ rotate, perspective: null, crop: ratio && shape !== "original" ? centredCrop(nw, nh, ratio) : null });
   };
 
   // --- crop box dragging -----------------------------------------------------
@@ -134,7 +178,34 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
     setDragging(true);
   };
 
+  const cornerDrag = useRef<{ i: number; start: Corners; px: number; py: number; rect: DOMRect } | null>(null);
+  const onCornerDown = (i: number) => (ev: PointerEvent) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    cornerDrag.current = { i, start: edits.perspective ?? START_CORNERS, px: ev.clientX, py: ev.clientY, rect: shown.current!.getBoundingClientRect() };
+    (ev.target as Element).setPointerCapture(ev.pointerId);
+    setDragging(true);
+  };
+  const moveCorner = (start: Corners, i: number, dx: number, dy: number) => {
+    const next = start.map((p) => [...p]) as Corners;
+    next[i] = [clamp(start[i][0] + dx, 0, 1), clamp(start[i][1] + dy, 0, 1)];
+    if (isConvex(next)) set({ perspective: next }); // a crossed or dented shape can't be a rectangle
+  };
+  const onCornerKey = (i: number) => (ev: KeyboardEvent) => {
+    const step = ev.altKey ? 0.002 : 0.01;
+    const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    const m = moves[ev.key];
+    if (!m) return;
+    ev.preventDefault();
+    moveCorner(edits.perspective ?? START_CORNERS, i, m[0], m[1]);
+  };
+
   const onMove = (ev: PointerEvent) => {
+    const cd = cornerDrag.current;
+    if (cd) {
+      moveCorner(cd.start, cd.i, (ev.clientX - cd.px) / cd.rect.width, (ev.clientY - cd.py) / cd.rect.height);
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     const dx = (ev.clientX - d.px) / d.rect.width;
@@ -168,6 +239,7 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
 
   const onUp = () => {
     drag.current = null;
+    cornerDrag.current = null;
     setDragging(false);
   };
 
@@ -220,7 +292,32 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
         ) : (
           <div className="pe-canvas-wrap">
             <canvas ref={shown} className="pe-canvas" />
-            {tab === "crop" && !comparing && (
+            {tab === "crop" && !comparing && tilting && edits.perspective && (
+              <div className="pe-crop-layer pe-tilt-layer">
+                <svg className="pe-tilt-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+                  <path
+                    fillRule="evenodd"
+                    className="pe-tilt-shade"
+                    d={`M0 0H100V100H0Z M${edits.perspective.map(([x, y]) => `${x * 100} ${y * 100}`).join(" L")}Z`}
+                  />
+                  <polygon className="pe-tilt-edge" points={edits.perspective.map(([x, y]) => `${x * 100},${y * 100}`).join(" ")} vectorEffect="non-scaling-stroke" />
+                </svg>
+                {edits.perspective.map(([x, y], i) => (
+                  <span
+                    key={i}
+                    className="pe-corner"
+                    style={{ left: pct(x), top: pct(y) }}
+                    onPointerDown={onCornerDown(i)}
+                    onKeyDown={onCornerKey(i)}
+                    tabIndex={0}
+                    role="slider"
+                    aria-label={`${CORNER_NAMES[i]} corner. Arrow keys move it.`}
+                    aria-valuetext={`${Math.round(x * 100)}% across, ${Math.round(y * 100)}% down`}
+                  />
+                ))}
+              </div>
+            )}
+            {tab === "crop" && !comparing && !tilting && (
               <div className="pe-crop-layer">
                 {edits.circle && (
                   <div className="pe-cut-shade" aria-hidden>
@@ -256,12 +353,12 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
         </div>
         <div className="segmented pe-tabs" role="tablist" aria-label="Editing tools">
           <button type="button" role="tab" aria-selected={tab === "crop"} className={tab === "crop" ? "on" : ""} onClick={() => setTab("crop")}>Crop and turn</button>
-          <button type="button" role="tab" aria-selected={tab === "adjust"} className={tab === "adjust" ? "on" : ""} onClick={() => setTab("adjust")}>Adjust</button>
+          <button type="button" role="tab" aria-selected={tab === "adjust"} className={tab === "adjust" ? "on" : ""} disabled={tilting} onClick={() => setTab("adjust")}>Adjust</button>
         </div>
 
         {tab === "crop" ? (
           <div className="pe-tools" role="tabpanel">
-            <fieldset className="pe-shapes">
+            <fieldset className="pe-shapes" hidden={tilting}>
               <legend>Shape</legend>
               {SHAPES.map((s) => (
                 <button key={s.key} type="button" className={`chip${shape === s.key ? " on" : ""}`} aria-pressed={shape === s.key} onClick={() => chooseShape(s.key)}>
@@ -270,11 +367,26 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
               ))}
               {shape === "square" && <p className="hint">The circle helps centre a coin.</p>}
             </fieldset>
-            <div className="pe-find">
-              <button type="button" onClick={findCoin} disabled={finding || !source}>{finding ? "Looking…" : "Find the coin"}</button>
-              {findNote && <p className="hint" role="status">{findNote}</p>}
-            </div>
-            {edits.circle && (
+            {tilting ? (
+              <div className="pe-tilt-tools">
+                <p className="hint">
+                  Drag each corner onto a corner of the holder (or anything that should be a rectangle). The photo is squared up so they make one.
+                </p>
+                <div className="pe-turns">
+                  <button type="button" className="primary" onClick={() => endTilt(true)}>Done</button>
+                  <button type="button" onClick={() => endTilt(false)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="pe-find">
+                <button type="button" onClick={findCoin} disabled={finding !== null || !source}>{finding === "coin" ? "Looking…" : "Find the coin"}</button>
+                <button type="button" onClick={findSlab} disabled={finding !== null || !source}>{finding === "slab" ? "Looking…" : "Find the slab"}</button>
+                <button type="button" onClick={startTilt} disabled={!source}>{edits.perspective ? "Adjust tilt" : "Fix tilt"}</button>
+                {edits.perspective && <button type="button" className="ghost small" onClick={() => set({ perspective: null, crop: null })}>Remove tilt fix</button>}
+                {findNote && <p className="hint" role="status">{findNote}</p>}
+              </div>
+            )}
+            {edits.circle && !tilting && (
               <fieldset className="pe-shapes">
                 <legend>Outside the circle</legend>
                 {BACKGROUNDS.map(([k, label]) => (
@@ -286,9 +398,9 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
               </fieldset>
             )}
             <div className="pe-turns">
-              <button type="button" onClick={() => turn(-90)}>Turn left</button>
-              <button type="button" onClick={() => turn(90)}>Turn right</button>
-              <button type="button" aria-pressed={edits.flip} className={edits.flip ? "on" : ""} onClick={() => set({ flip: !edits.flip })}>Mirror</button>
+              <button type="button" disabled={tilting} onClick={() => turn(-90)}>Turn left</button>
+              <button type="button" disabled={tilting} onClick={() => turn(90)}>Turn right</button>
+              <button type="button" aria-pressed={edits.flip} className={edits.flip ? "on" : ""} disabled={tilting} onClick={() => set({ flip: !edits.flip, perspective: null, crop: null })}>Mirror</button>
             </div>
             <Slider label="Straighten" value={edits.straighten} min={-45} max={45} step={0.5} unit="°" onChange={(v) => set({ straighten: v })} />
             <p className="hint tabular">{edits.crop ? `Crop: about ${cropW.toLocaleString()} px wide` : "No crop"}</p>
@@ -314,7 +426,7 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
           >
             Hold to see the original
           </button>
-          <button type="button" className="ghost small" disabled={!isEdited(edits)} onClick={() => { setEdits(NO_EDITS); setShape("free"); }}>
+          <button type="button" className="ghost small" disabled={!isEdited(edits)} onClick={() => { setEdits(NO_EDITS); setShape("free"); setTilting(false); setTiltBefore(null); }}>
             Reset to original
           </button>
         </div>
@@ -322,7 +434,7 @@ export default function PhotoEditor({ photo, title, onClose, onSaved }: { photo:
         {error && <p className="error" role="alert">{error}</p>}
         <div className="pe-actions">
           <button type="button" onClick={() => { if (!dirty || window.confirm("Discard your changes to this photo?")) close(); }}>Cancel</button>
-          <button type="button" className="primary" disabled={!dirty || saving || !source} onClick={save}>
+          <button type="button" className="primary" disabled={!dirty || saving || !source || tilting} onClick={save}>
             {saving ? "Saving…" : "Save photo"}
           </button>
         </div>

@@ -807,8 +807,10 @@ export const api = {
     request<{ deleted: number; photos_removed: number; uploads_removed: number }>("POST", `${A}/library/delete`, { sha256s }),
   addFromLibrary: (itemId: number, body: { sha256: string; role: PhotoRole; make_cover: boolean }) =>
     request<Photo>("POST", `${A}/items/${itemId}/photos/from-library`, body),
-  findCoin: (photoId: number, frame: { rotate: number; flip: boolean; straighten: number }) =>
+  findCoin: (photoId: number, frame: { rotate: number; flip: boolean; straighten: number; perspective: [number, number][] | null }) =>
     request<{ crop: { x: number; y: number; w: number; h: number } }>("POST", `${A}/photos/${photoId}/find-coin`, frame),
+  findSlab: (photoId: number, frame: { rotate: number; flip: boolean; straighten: number }) =>
+    request<{ perspective: [number, number][] }>("POST", `${A}/photos/${photoId}/find-slab`, frame),
   setPhotoEdits: (id: number, edits: unknown) => request<Photo>("PUT", `${A}/photos/${id}/edits`, { edits }),
   deletePhoto: (id: number) => request<void>("DELETE", `${A}/photos/${id}`),
 
@@ -885,7 +887,8 @@ export const api = {
     fd.append("file", file);
     return request<{ text: string; format: string }[]>("POST", `${A}/pcgs/read-barcode`, fd);
   },
-  pcgsPriceGuide: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/pcgs/price-guide`),
+  pcgsPriceGuide: (itemId: number, pcgsNumber?: string) =>
+    request<Valuation>("POST", `${A}/items/${itemId}/pcgs/price-guide`, pcgsNumber ? { pcgs_number: pcgsNumber } : undefined),
 
   valuations: (itemId: number) => request<Valuation[]>("GET", `${A}/items/${itemId}/valuations`),
   addValuation: (itemId: number, body: unknown) => request<Valuation>("POST", `${A}/items/${itemId}/valuations`, body),

@@ -198,8 +198,10 @@ def test_identify_from_library_photos_and_errors(api, fake, images):
     assert api.post("/api/v1/ai/identify", json={"photos": [{"sha256": "0" * 64}]}).status_code == 404
 
     fake.answer = "not json"
+    chats = sum(1 for p, _ in fake.calls if p == "/api/chat")
     r = api.post("/api/v1/ai/identify", json={"photos": [{"sha256": sha}]})
     assert r.status_code == 502 and "JSON" in r.json()["detail"]
+    assert sum(1 for p, _ in fake.calls if p == "/api/chat") == chats + 2  # asked twice before giving up
 
     api.put("/api/v1/ai/settings", json={"url": "http://192.168.1.80:11434", "model": "missing:1b"})
     r = api.post("/api/v1/ai/identify", json={"photos": [{"sha256": sha}]})
@@ -262,3 +264,19 @@ def test_thinking_is_turned_down(api, fake, images, monkeypatch):
         def request(self, method, url, json=None):
             return httpx.Response(200, json={"thinking": {"values": ["low", "medium", "high"], "default": "medium"}}, request=httpx.Request(method, url))
     assert o.think_setting(Levels(), "http://x:11434", "gpt-oss:20b") == "low"
+
+
+def test_pcgs_label_numbers_line():
+    from app.services.ai import parse_identified
+
+    pcgs = {**SLAB, "holder": {"in_holder": True, "service": "PCGS", "grade": "MS67", "cert_number": "7411.67/48872051",
+                               "pcgs_number": "", "label_text": "1972-S $1 PCGS MS67 Silver 7411.67/48872051"}}
+    h = parse_identified(pcgs).holder
+    assert (h.pcgs_number, h.cert_number) == ("7411", "48872051")
+    # the line run together, with the PCGS number read separately
+    glued = {**pcgs, "holder": {**pcgs["holder"], "cert_number": "74116748872051", "pcgs_number": "7411", "label_text": "1972-S $1 PCGS MS67"}}
+    h = parse_identified(glued).holder
+    assert (h.pcgs_number, h.cert_number) == ("7411", "48872051")
+    # NGC certs keep their dash
+    ngc = {**pcgs, "holder": {**pcgs["holder"], "service": "NGC", "cert_number": "8698301-036", "label_text": "2025 D 1C"}}
+    assert parse_identified(ngc).holder.cert_number == "8698301-036"

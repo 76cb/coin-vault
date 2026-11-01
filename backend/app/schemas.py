@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -350,10 +350,24 @@ class PhotoCrop(_Base):
         return self
 
 
+Corner = tuple[Annotated[float, Field(ge=0, le=1)], Annotated[float, Field(ge=0, le=1)]]
+
+
+def _check_corners(v: list[Corner] | None) -> list[Corner] | None:
+    from app.services.slab import is_convex
+
+    if v is not None and (len(v) != 4 or not is_convex(list(v))):
+        raise ValueError("Tilt correction needs four corners going round the shape, top-left first")
+    return v
+
+
 class PhotoEdits(_Base):
     rotate: Literal[0, 90, 180, 270] = 0
     flip: bool = False
     straighten: float = Field(default=0, ge=-45, le=45)
+    # tilt correction: the corners (top-left, top-right, bottom-right, bottom-left) of something that should be
+    # rectangular, as fractions of the straightened frame; the photo is warped so they make a rectangle
+    perspective: list[Corner] | None = None
     crop: PhotoCrop | None = None
     exposure: int = Field(default=0, ge=-100, le=100)
     contrast: int = Field(default=0, ge=-100, le=100)
@@ -363,6 +377,11 @@ class PhotoEdits(_Base):
     circle: bool = False  # cut out the circle inside the crop
     background: Literal["clear", "white", "black"] = "clear"  # outside the circle
 
+    @field_validator("perspective")
+    @classmethod
+    def _corners(cls, v: list[Corner] | None) -> list[Corner] | None:
+        return _check_corners(v)
+
     def is_identity(self) -> bool:
         c = self.crop
         whole = c is None or (c.x <= 0.0001 and c.y <= 0.0001 and c.w >= 0.9999 and c.h >= 0.9999)
@@ -370,11 +389,17 @@ class PhotoEdits(_Base):
 
 
 class FindCoinIn(_Base):
-    """The turns and straighten the editor has now: the crop found is in that frame."""
+    """The turns, straighten and tilt correction the editor has now: what's found is in that frame."""
 
     rotate: Literal[0, 90, 180, 270] = 0
     flip: bool = False
     straighten: float = Field(default=0, ge=-45, le=45)
+    perspective: list[Corner] | None = None
+
+    @field_validator("perspective")
+    @classmethod
+    def _corners(cls, v: list[Corner] | None) -> list[Corner] | None:
+        return _check_corners(v)
 
 
 class PhotoEditsIn(_Base):

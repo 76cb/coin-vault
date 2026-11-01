@@ -163,13 +163,17 @@ def chat_json(
     think = think_setting(c, base, model)
     if think is not None:
         body["think"] = think
-    data = _send(c, "POST", f"{base}/api/chat", "look at the photos", body)
-    content = ((data.get("message") or {}).get("content") or "").strip()
-    try:
-        parsed = json.loads(content)
-    except ValueError as exc:
-        raise OllamaError("The model's answer wasn't the JSON asked for. Try again, or choose a different model in Settings.") from exc
-    if not isinstance(parsed, dict):
-        raise OllamaError("The model's answer wasn't the JSON asked for. Try again, or choose a different model in Settings.")
+    for attempt in range(2):  # now and then an answer comes back cut short or garbled; asking again usually works
+        data = _send(c, "POST", f"{base}/api/chat", "look at the photos", body)
+        content = ((data.get("message") or {}).get("content") or "").strip()
+        try:
+            parsed = json.loads(content)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            break
+        body["options"] = {**body["options"], "seed": 1 + attempt}  # a different draw the second time
+    else:
+        raise OllamaError("The model's answer wasn't the JSON asked for, twice. Try again, or choose a different model in Settings.")
     ns = 1e-9
     return ChatResult(parsed, float(data.get("total_duration") or 0) * ns, float(data.get("load_duration") or 0) * ns)

@@ -203,3 +203,85 @@ def test_full_size_copy_is_made_once_and_cleaned_up(api, images):
     assert storage.exists(key2)
     assert api.delete(f"/api/v1/photos/{photo['id']}").status_code == 204
     assert not storage.exists(key2)
+
+
+def test_tilt_correction_straightens_a_quadrilateral(api, images):
+    from PIL import ImageDraw
+
+    from app.services.slab import perspective_coeffs
+
+    item = make_item(api)
+    # a 600 x 800 grid card photographed at an angle: its corners land on a tilted quadrilateral
+    card = Image.new("RGB", (600, 800), (240, 240, 240))
+    d = ImageDraw.Draw(card)
+    for x in range(0, 601, 100):
+        d.line((x, 0, x, 800), fill=(20, 20, 20), width=6)
+    for y in range(0, 801, 100):
+        d.line((0, y, 600, y), fill=(20, 20, 20), width=6)
+    corners = [(300, 150), (1000, 220), (1060, 1080), (240, 1000)]
+    photo_px = card.transform((1300, 1200), Image.Transform.PERSPECTIVE,
+                              perspective_coeffs(corners, [(0, 0), (600, 0), (600, 800), (0, 800)]), Image.Resampling.BICUBIC)
+    photo = upload(api, item["id"], [("tilted.png", _png(photo_px), "image/png")]).json()[0]
+    frac = [[round(x / 1300, 4), round(y / 1200, 4)] for x, y in corners]
+
+    assert put(api, photo["id"], {"perspective": frac[:3]}).status_code == 422
+    assert put(api, photo["id"], {"perspective": [frac[0], frac[2], frac[1], frac[3]]}).status_code == 422  # crossed
+    assert put(api, photo["id"], {"perspective": [[1.2, 0], *frac[1:]]}).status_code == 422
+    r = put(api, photo["id"], {"perspective": frac})
+    assert r.status_code == 200, r.text
+
+    out = photo_edit.render(photo_px, {"perspective": frac}, None)
+    w, h = out.size
+    assert abs(w - 824) <= 2 and abs(h - 862) <= 2  # the longer of each pair of opposite sides
+    a = np.asarray(out.convert("L").resize((600, 800)), dtype=np.float32)
+    # the grid is square again: its inner lines sit at every 100 px, straight across
+    for x in (100, 300, 500):
+        assert a[50:750, x - 4 : x + 5].min(axis=1).mean() < 90, x
+    for y in (200, 400, 600):
+        assert a[y - 4 : y + 5, 50:550].min(axis=0).mean() < 90, y
+    # crop applies after the tilt, in its frame
+    cropped_ = photo_edit.render(photo_px, {"perspective": frac, "crop": {"x": 0, "y": 0, "w": 0.5, "h": 0.5}}, None)
+    assert abs(cropped_.width - w / 2) <= 1 and abs(cropped_.height - h / 2) <= 1
+    # the photo's own copies follow
+    assert img(api.get(r.json()["urls"]["medium"])).size[0] > 0
+
+
+def _png(im):
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("kind, bg, corners", [
+    ("ngc", "wood", [(500, 220), (1100, 240), (1130, 1060), (470, 1040)]),
+    ("ngc", "wood", [(560, 260), (1040, 200), (1160, 980), (600, 1100)]),
+    ("pcgs", "plain", [(400, 150), (1000, 180), (1050, 1100), (380, 1080)]),
+])
+def test_find_the_slab(api, kind, bg, corners):
+    from .slab_helpers import slab_image
+
+    item = make_item(api)
+    photo_img, truth = slab_image(seed=7, kind=kind, bg=bg, corners=corners)
+    photo = upload(api, item["id"], [("slab.jpg", _jpeg(photo_img), "image/jpeg")]).json()[0]
+    r = api.post(f"/api/v1/photos/{photo['id']}/find-slab", json={})
+    assert r.status_code == 200, r.text
+    found = r.json()["perspective"]
+    W, H = photo_img.size
+    for (fx, fy), (tx, ty) in zip(found, truth, strict=True):
+        assert abs(fx * W - tx) < 0.02 * W and abs(fy * H - ty) < 0.02 * H, (found, truth)
+    # it's ready to save as the photo's tilt correction, and the coin finder works in that frame
+    assert put(api, photo["id"], {"perspective": found}).status_code == 200
+    assert api.post(f"/api/v1/photos/{photo['id']}/find-coin", json={"perspective": found}).status_code in (200, 404)
+
+
+def test_no_slab_in_a_coin_photo(api, images):
+    item = make_item(api)
+    photo = upload(api, item["id"], [("coin.jpg", images["jpeg"](images["coin"](seed=15)), "image/jpeg")]).json()[0]
+    r = api.post(f"/api/v1/photos/{photo['id']}/find-slab", json={})
+    assert r.status_code == 404 and "Fix tilt" in r.json()["detail"]
+
+
+def _jpeg(im):
+    buf = io.BytesIO()
+    im.convert("RGB").save(buf, "JPEG", quality=90)
+    return buf.getvalue()

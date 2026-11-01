@@ -389,3 +389,27 @@ test("look up at PCGS by number and grade, and by a holder's barcode", async ({ 
   await page.getByRole("button", { name: "Fill in the form" }).click();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue(`${name} NGC MS64`);
 });
+
+test("a coin graded by ICG gets a PCGS price once it has a PCGS number", async ({ page }) => {
+  const title = `1922 Peace Dollar ICG MS64 ${unique("t")}`;
+  let asked: unknown = null;
+  await page.route("**/api/v1/items/*/pcgs/price-guide", (route) => {
+    asked = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { id: 1, item_id: 1, kind: "manual", value_each: "95", currency: "USD", as_of: "2026-11-01", source: "PCGS Price Guide (MS64)", notes: null, details: null } });
+  });
+  await signIn(page);
+  await page.goto("/items/new");
+  await page.locator("#qs-text").fill(title);
+  await page.getByRole("button", { name: "Fill in the form" }).click();
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+
+  const market = page.getByRole("region", { name: "Market value" });
+  await market.getByRole("tab", { name: "PCGS price guide" }).click();
+  await expect(market.getByRole("link", { name: "Search for its PCGS number" })).toHaveAttribute("href", /PCGS%20CoinFacts%201922/);
+  await expect(market.getByText("ICG-graded coins often sell for less")).toBeVisible();
+  await market.getByLabel("PCGS number").fill("7357");
+  await market.getByRole("button", { name: "Get the price in grade 64" }).click();
+  await expect(market.getByLabel("PCGS number")).toBeHidden();
+  expect(asked).toEqual({ pcgs_number: "7357" });
+});

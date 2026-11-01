@@ -142,3 +142,23 @@ def test_price_guide_by_number_and_grade_for_an_ngc_coin(api, fake):
     assert fake.pcgs_calls[-1][0] == "GetCoinFactsByGrade"
     bare = api.post("/api/v1/items", json={"item_type": "coin", "title": "No numbers"}).json()
     assert api.post(f"/api/v1/items/{bare['id']}/pcgs/price-guide").status_code == 422
+
+
+def test_price_guide_for_another_graders_coin_with_its_pcgs_number(api, fake):
+    api.put("/api/v1/settings/providers/pcgs", json={"api_key": "pcgs-token"})
+    item = api.post("/api/v1/items", json={
+        "item_type": "coin", "title": "1922 Peace Dollar ICG MS64",
+        "details": {"country": "United States", "year": 1922, "denomination": "$1", "series": "Peace"},
+        "condition": {"grading": "slabbed", "grading_service": "ICG", "grade_text": "MS64", "sheldon_grade": 64},
+    }).json()
+    r = api.post(f"/api/v1/items/{item['id']}/pcgs/price-guide")
+    assert r.status_code == 422  # no PCGS number yet
+    assert api.post(f"/api/v1/items/{item['id']}/pcgs/price-guide", json={"pcgs_number": "73x57"}).status_code == 422
+    number = next(iter(fake.pcgs_certs.values()))["PCGSNo"]  # one the fake PCGS knows
+    r = api.post(f"/api/v1/items/{item['id']}/pcgs/price-guide", json={"pcgs_number": f" #{number} "})
+    assert r.status_code == 201, r.text
+    assert api.get(f"/api/v1/items/{item['id']}").json()["details"]["pcgs_number"] == number  # kept for next time
+    path, params = fake.pcgs_calls[-1]
+    assert path == "GetCoinFactsByGrade" and params["PCGSNo"] == number and params["GradeNo"] == "64"
+    # next time the item's own number is used
+    assert api.post(f"/api/v1/items/{item['id']}/pcgs/price-guide").status_code == 201

@@ -73,3 +73,45 @@ test("cut a coin out as a circle", async ({ page }) => {
   await expect(editor.getByRole("button", { name: "White" })).toHaveAttribute("aria-pressed", "true");
   await editor.getByRole("button", { name: "Cancel" }).click();
 });
+
+test("find a slab and square it up, then adjust a corner", async ({ page }) => {
+  const title = unique("Slab photo");
+  await signIn(page);
+  await page.getByRole("link", { name: "Add item" }).first().click();
+  await page.getByLabel("Title", { exact: true }).fill(title);
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("slab.jpg")]);
+  const row = page.locator(".photo-list li").first();
+  await expect(row).toContainText("1200×900");
+
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByRole("button", { name: "Find the slab" }).click();
+  await expect(editor.getByText("Found the holder and squared it up.")).toBeVisible();
+  // the frame is now the holder, upright: taller than wide
+  const c = (await editor.locator(".pe-canvas").boundingBox())!;
+  expect(c.height / c.width).toBeGreaterThan(1.2);
+
+  await editor.getByRole("button", { name: "Adjust tilt" }).click();
+  const corner = editor.getByRole("slider", { name: /top-left corner/ });
+  await expect(editor.getByRole("slider", { name: /corner/ })).toHaveCount(4);
+  await expect(editor.getByRole("button", { name: "Save photo" })).toBeDisabled(); // finish placing corners first
+  await corner.focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
+  await editor.getByRole("button", { name: "Done" }).click();
+  await expect(editor.getByRole("slider", { name: /corner/ })).toHaveCount(0);
+  await editor.getByRole("button", { name: "Save photo" }).click();
+  await expect(editor).toBeHidden();
+  await expect(row).toContainText(/edited/);
+  // the saved size is the squared-up holder (about 3:4), not the 4:3 photo
+  const size = (await row.textContent())!.match(/(\d+)×(\d+), edited/)!;
+  expect(Number(size[2]) / Number(size[1])).toBeGreaterThan(1.2);
+
+  // Remove tilt fix puts the whole photo back
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  await editor.getByRole("button", { name: "Remove tilt fix" }).click();
+  await editor.getByRole("button", { name: "Save photo" }).click();
+  await expect(row).toContainText("1200×900");
+});

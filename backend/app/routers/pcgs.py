@@ -198,12 +198,23 @@ def price_guide_lookup(db: Session, item) -> pcgs.PcgsCoin:
     raise HTTPException(422, "This needs a PCGS cert number, or a PCGS number and a grade, filled in on the item")
 
 
+class PriceGuideIn(BaseModel):
+    # a PCGS number to use (and keep on the item), for a coin graded by someone else or not graded at all
+    pcgs_number: str | None = Field(default=None, pattern=r"^\s*#?\s*\d{1,7}\s*$")
+
+
 @router.post("/items/{item_id}/pcgs/price-guide", response_model=ValuationOut, status_code=201)
-def price_guide(item_id: int, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+def price_guide(
+    item_id: int, body: PriceGuideIn | None = None, principal: Principal = Depends(write_items), db: Session = Depends(get_db)
+):
     """Saves today's PCGS price guide value as the item's market value (by its cert, or its PCGS number and grade)."""
     item = item_svc.get_item(db, principal, item_id, False)
     if principal.user.base_currency != "USD":
         raise HTTPException(422, "PCGS price guide values are in US dollars; your display currency isn't USD")
+    if body is not None and body.pcgs_number:
+        if item.coin is None:
+            raise HTTPException(422, "Only coins have PCGS numbers")
+        item.coin.pcgs_number = re.sub(r"\D", "", body.pcgs_number)
     c = price_guide_lookup(db, item)
     if c.price_guide is None:
         raise HTTPException(404, f"PCGS has no price guide value for {c.name or 'this coin'} in {c.grade or 'this grade'}")

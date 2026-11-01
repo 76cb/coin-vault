@@ -31,7 +31,7 @@ function priceOf(l: CompListing, basis: "sold" | "total"): number | null {
 /** Market value: the newest value, a way to fetch or type a new one, and the history. */
 export default function MarketValue({ item }: { item: Item }) {
   const qc = useQueryClient();
-  const [open, setOpen] = useState<null | "search" | "manual">(null);
+  const [open, setOpen] = useState<null | "search" | "manual" | "pcgs">(null);
   const [pcgsBusy, setPcgsBusy] = useState(false);
   const [pcgsError, setPcgsError] = useState<string | null>(null);
   const slabbed = item.condition?.grading === "slabbed";
@@ -39,6 +39,8 @@ export default function MarketValue({ item }: { item: Item }) {
   const pcgsNo = String(item.details?.pcgs_number ?? "").trim();
   const gradeNo = /\d{1,2}\+?/.exec(item.condition?.grade_text || String(item.condition?.sheldon_grade ?? ""))?.[0];
   const pcgsByGrade = !pcgsSlab && Boolean(pcgsNo && gradeNo);
+  // graded by someone else (or not at all): PCGS can still price it once it knows the coin's PCGS number
+  const pcgsNeedsNumber = !pcgsSlab && !pcgsNo && Boolean(gradeNo) && (item.item_type === "coin" || item.item_type === "bullion");
   const history = useQuery({ queryKey: ["valuations", item.id], queryFn: () => api.valuations(item.id) });
   const cur = item.values?.currency ?? "USD";
 
@@ -61,6 +63,11 @@ export default function MarketValue({ item }: { item: Item }) {
           <button type="button" role="tab" aria-selected={open === "manual"} className={open === "manual" ? "on" : ""} onClick={() => setOpen(open === "manual" ? null : "manual")}>
             Enter a value
           </button>
+          {pcgsNeedsNumber && (
+            <button type="button" role="tab" aria-selected={open === "pcgs"} className={open === "pcgs" ? "on" : ""} onClick={() => setOpen(open === "pcgs" ? null : "pcgs")}>
+              PCGS price guide
+            </button>
+          )}
           {(pcgsSlab || pcgsByGrade) && (
             <button
               type="button"
@@ -91,6 +98,7 @@ export default function MarketValue({ item }: { item: Item }) {
 
       {open === "search" && <CompsSearchPanel item={item} currency={cur} onSaved={async () => { await refresh(); setOpen(null); }} />}
       {open === "manual" && <ManualPanel item={item} onSaved={async () => { await refresh(); setOpen(null); }} />}
+      {open === "pcgs" && gradeNo && <PcgsNumberPanel item={item} grade={gradeNo} onSaved={async () => { await refresh(); setOpen(null); }} />}
 
       {history.data && history.data.length > 0 ? (
         <table className="figures ledger">
@@ -459,4 +467,49 @@ function NumistaValue({ item, onChanged }: { item: Item; onChanged: () => Promis
 function hintFor(item: Item): string {
   const c = item.condition;
   return [item.title, c?.grade_text, ...(c?.designations ?? []), String((item.details as Record<string, unknown>).variety_notes ?? "")].filter(Boolean).join(" ");
+}
+
+/** PCGS prices a coin by its own number for that date and mint, so a coin from another grader (or none) needs it first. */
+function PcgsNumberPanel({ item, grade, onSaved }: { item: Item; grade: string; onSaved: () => Promise<void> }) {
+  const [number, setNumber] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const d = item.details ?? {};
+  const words = [d.year, d.mint_mark ? `-${d.mint_mark}` : "", " ", d.denomination ?? "", " ", d.series ?? ""].join("").replace(/\s+/g, " ").trim();
+  const search = `https://www.google.com/search?q=${encodeURIComponent(`PCGS CoinFacts ${words || item.title}`)}`;
+  const service = item.condition?.grading_service;
+  return (
+    <form
+      className="market-panel pcgs-number"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(null);
+        try {
+          await api.pcgsPriceGuide(item.id, number.trim());
+          await onSaved();
+        } catch (err) {
+          setError((err as Error).message);
+          setBusy(false);
+        }
+      }}
+    >
+      <p>
+        PCGS prices each date and mint under its own PCGS number. Find this coin's on PCGS CoinFacts (it's in the page's address and title,
+        like “PCGS #7357”), and it's kept on the item for next time.
+      </p>
+      <p><a href={search} target="_blank" rel="noreferrer">Search for its PCGS number</a></p>
+      <div className="pcgs-number-row">
+        <label>
+          PCGS number
+          <input value={number} onChange={(e) => setNumber(e.target.value)} inputMode="numeric" pattern="#?\s*\d{1,7}" placeholder="7357" required />
+        </label>
+        <button type="submit" className="primary" disabled={busy || !number.trim()}>{busy ? "Asking PCGS…" : `Get the price in grade ${grade}`}</button>
+      </div>
+      <p className="hint">
+        The price is for a PCGS-graded coin in that grade{service && service.toUpperCase() !== "PCGS" ? `; ${service}-graded coins often sell for less` : ""}.
+      </p>
+      {error && <p className="error" role="alert">{error}</p>}
+    </form>
+  );
 }

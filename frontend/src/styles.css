@@ -953,3 +953,18 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
 
 .page-error { max-width: 60ch; padding: 2rem 0; }
 .page-error code { word-break: break-word; }
+
+/* --- Photo editor: tilt correction --- */
+.pe-tilt-layer { touch-action: none; }
+.pe-tilt-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.pe-tilt-shade { fill: rgba(8, 13, 22, 0.55); }
+.pe-tilt-edge { fill: none; stroke: var(--champagne); stroke-width: 1.5px; }
+.pe-corner { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; border: 2px solid var(--champagne); background: rgba(15, 27, 45, 0.35); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45); cursor: grab; touch-action: none; }
+.pe-corner::before { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--champagne); }
+.pe-corner::after { content: ""; position: absolute; inset: -12px; border-radius: 50%; } /* a bigger target for fingers */
+.pe-corner:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pe-tilt-tools { display: flex; flex-direction: column; gap: 0.6rem; }
+.pe-tilt-tools .hint { margin: 0; }
+.pcgs-number p { margin: 0 0 0.6rem; max-width: 70ch; }
+.pcgs-number-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem 1rem; margin-bottom: 0.6rem; }
+.pcgs-number-row label { margin: 0; width: 10rem; }

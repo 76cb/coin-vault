@@ -137,6 +137,19 @@ def find_coin(photo_id: int, body: FindCoinIn, principal: Principal = Depends(re
     return {"crop": crop}
 
 
+@router.post("/photos/{photo_id}/find-slab")
+def find_slab(photo_id: int, body: FindCoinIn, principal: Principal = Depends(read_items), db: Session = Depends(get_db)):
+    """Where the grading holder is: its four corners, as the editor's tilt correction. 404 when none is clear."""
+    photo = _photo(db, principal, photo_id)
+    try:
+        corners = photo_edit.find_slab_corners(photo.storage_key, body.model_dump(exclude={"perspective"}))
+    except OSError as exc:
+        raise HTTPException(422, f"The photo couldn't be read: {exc}") from exc
+    if corners is None:
+        raise HTTPException(404, "Couldn't find the holder's edges in this photo. Use Fix tilt and drag the corners onto it instead.")
+    return {"perspective": corners}
+
+
 @router.put("/items/{item_id}/photos/order", response_model=list[PhotoOut])
 def reorder_photos(
     item_id: int, body: PhotoOrder, principal: Principal = Depends(write_items), db: Session = Depends(get_db)

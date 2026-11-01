@@ -4,7 +4,7 @@ display copies (thumb, medium) are rendered from the original with them.
 The browser editor (frontend/src/photoEdit.ts) runs the same steps on its preview, so what you see
 while editing is what gets saved. Keep the two in step.
 
-Order: orientation from EXIF -> quarter turns -> mirror -> straighten -> crop -> colour.
+Order: orientation from EXIF -> quarter turns -> mirror -> straighten -> tilt -> crop -> colour.
 Colour on 0..1 values per channel:
   exposure     v *= 2 ** (exposure / 100)            (-100..100 = -1..+1 stop)
   contrast     v = (v - 0.5) * (1 + contrast / 100) + 0.5
@@ -12,7 +12,10 @@ Colour on 0..1 values per channel:
   warmth       R *= 1 + 0.15 w/100 ; B *= 1 - 0.15 w/100
   sharpness    v += 1.5 * s/100 * (v - box3x3(v)), on the output size
 Straighten: rotate by `straighten` degrees (clockwise), then zoom so the frame has no empty corners.
-Crop: x, y, w, h as fractions (0..1) of the straightened frame.
+Tilt (perspective): four corners (top-left, top-right, bottom-right, bottom-left) as fractions of the
+straightened frame's width and height; the frame becomes the rectangle they're warped into, as wide as
+the longer of the top and bottom sides and as tall as the longer of the left and right (slab.py).
+Crop: x, y, w, h as fractions (0..1) of the frame after straighten and tilt.
 Circle (last): everything outside the circle inscribed in the crop becomes the background: clear
 (transparent), white or black. The edge is anti-aliased (alpha from each pixel's distance to the edge).
 """
@@ -28,7 +31,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
-from app.services import storage
+from app.services import slab, storage
 
 TUNING = ("exposure", "contrast", "saturation", "warmth", "sharpness")
 
@@ -63,6 +66,9 @@ def _geometry(img: Image.Image, e: dict[str, Any]) -> Image.Image:
         fw, fh = max(1, int(w / k) - 2), max(1, int(h / k) - 2)
         left, top = (turned.width - fw) // 2, (turned.height - fh) // 2
         img = turned.crop((left, top, left + fw, top + fh))
+    corners = e.get("perspective")
+    if corners:
+        img = warp(img, corners)
     crop = e.get("crop")
     if crop:
         w, h = img.size
@@ -70,6 +76,16 @@ def _geometry(img: Image.Image, e: dict[str, Any]) -> Image.Image:
         box = (max(0, box[0]), max(0, box[1]), min(w, max(box[0] + 1, box[2])), min(h, max(box[1] + 1, box[3])))
         img = img.crop(box)
     return img
+
+
+def warp(img: Image.Image, corners: list) -> Image.Image:
+    """The quadrilateral `corners` (fractions of the image) straightened into a rectangle."""
+    w, h = img.size
+    src = [(float(x) * w, float(y) * h) for x, y in corners]
+    ow, oh = slab.straightened_size(src)
+    ow, oh = max(1, round(ow)), max(1, round(oh))
+    coeffs = slab.perspective_coeffs([(0, 0), (ow, 0), (ow, oh), (0, oh)], src)
+    return img.transform((ow, oh), Image.Transform.PERSPECTIVE, coeffs, Image.Resampling.BICUBIC)
 
 
 def _box_blur(a: np.ndarray) -> np.ndarray:
@@ -282,7 +298,7 @@ def find_coin_crop(storage_key: str, edits: dict[str, Any]) -> dict[str, float] 
         img = ImageOps.exif_transpose(original)
         img = img.convert("RGB")
     img.thumbnail((1200, 1200))
-    frame = _geometry(img, {k: v for k, v in edits.items() if k in ("rotate", "flip", "straighten")})
+    frame = _geometry(img, {k: v for k, v in edits.items() if k in ("rotate", "flip", "straighten", "perspective")})
     hit = find_circle(frame)
     if hit is None:
         return None
@@ -294,6 +310,18 @@ def find_coin_crop(storage_key: str, edits: dict[str, Any]) -> dict[str, float] 
     x = min(max(cx - side / 2, 0), fw - side)
     y = min(max(cy - side / 2, 0), fh - side)
     return {"x": round(x / fw, 4), "y": round(y / fh, 4), "w": round(side / fw, 4), "h": round(side / fh, 4)}
+
+
+def find_slab_corners(storage_key: str, edits: dict[str, Any]) -> list[tuple[float, float]] | None:
+    """The corners of the grading holder, as fractions of the frame after the turns and straighten in
+    `edits` (ready to use as its tilt correction); None when no clear four-sided outline is found."""
+    with Image.open(storage.path_for(storage_key)) as original:
+        original.draft("RGB", (1600, 1600))
+        img = ImageOps.exif_transpose(original)
+        img = img.convert("RGB")
+    img.thumbnail((1200, 1200))
+    frame = _geometry(img, {k: v for k, v in edits.items() if k in ("rotate", "flip", "straighten")})
+    return slab.find_quad(frame)
 
 
 def display_size(storage_key: str) -> tuple[int, int]:

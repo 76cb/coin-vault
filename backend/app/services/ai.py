@@ -141,7 +141,7 @@ Identify this piece. Fill in:
 - metal: the main metal.
 - weight_text: any weight and fineness marked on the piece, like "1 OZ. FINE SILVER" or "10 g 999.9"; empty if none.
 - title: a short listing-style title, date first, the way a dealer lists it: like "1956 D Washington Quarter" or "2021 1 oz American Silver Eagle Type 2 PCGS MS70". Put a grading service and grade in it only when the piece is in a grading holder.
-- holder: when the piece is sealed in a grading holder (a slab), copy from its label: service; grade exactly as printed (like "MS65", "PR69 DCAM", "AU Details"); cert_number as printed; pcgs_number (the PCGS coin number, only on PCGS labels); label_text (all the label's text). When it isn't in a holder: in_holder false and the rest empty.
+- holder: when the piece is sealed in a grading holder (a slab), copy from its label: service; grade exactly as printed (like "MS65", "PR69 DCAM", "AU Details"); cert_number; pcgs_number (only on PCGS labels); label_text (all the label's text, each line as printed). On a PCGS label the numbers line reads like "7411.67/48872051": the PCGS coin number (7411), a dot, the grade (67), a slash, then the cert number (48872051). The cert number is only the part after the slash. An NGC cert number looks like "8698301-036". When it isn't in a holder: in_holder false and the rest empty.
 - confidence: "high" only when the date, denomination and design are all clearly visible.
 - notes: one or two short sentences on anything you couldn't read or aren't sure of. Empty if nothing."""
 
@@ -211,6 +211,19 @@ def _cert(text: str) -> str | None:
     return t if 6 <= len(t.replace("-", "")) <= 20 else None
 
 
+# a PCGS label's numbers line: PCGS coin number . grade (maybe with +) / cert number
+PCGS_LINE = re.compile(r"\b(\d{2,6})\s*\.\s*(\d{1,2})\+?\s*/\s*(\d{7,10})\b")
+
+
+def _pcgs_numbers(*texts: str) -> tuple[str, str] | None:
+    """(PCGS number, cert number) from a label's "7411.67/48872051" line, wherever the model put it."""
+    for t in texts:
+        m = PCGS_LINE.search(t or "")
+        if m:
+            return m.group(1), m.group(3)
+    return None
+
+
 def parse_identified(d: dict[str, Any]) -> Identified:
     kind = d.get("kind") if d.get("kind") in ("coin", "bullion", "bar", "banknote", "other") else "coin"
     try:
@@ -232,6 +245,17 @@ def parse_identified(d: dict[str, Any]) -> Identified:
             pcgs_number=(re.sub(r"\D", "", _s(h.get("pcgs_number"), 20)) or None) if service == "PCGS" else None,
             label_text=_s(h.get("label_text"), 600) or None,
         )
+        if service == "PCGS":
+            nums = _pcgs_numbers(_s(h.get("label_text"), 600), _s(h.get("cert_number"), 40))
+            if nums:
+                holder.pcgs_number, holder.cert_number = nums
+            elif holder.cert_number and holder.pcgs_number and len(holder.cert_number) > 10:
+                # the whole line run together ("74116748872051"): PCGS number and grade first, then the cert
+                digits = holder.cert_number.replace("-", "")
+                g = re.sub(r"\D", "", holder.grade or "")
+                lead = holder.pcgs_number + g
+                if g and digits.startswith(lead) and 7 <= len(digits) - len(lead) <= 10:
+                    holder.cert_number = digits[len(lead):]
     title = _s(d.get("title"), 200)
     if not title:
         title = " ".join(str(x) for x in (year, mint, _s(d.get("series")) or _s(d.get("denomination"))) if x)
