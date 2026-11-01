@@ -173,7 +173,7 @@ export function AiGradeGuess({ photos, itemId, onNote }: { photos: AiPhotoRef[];
           </dl>
           <p className="ai-caution">
             {g.low_number >= 60
-              ? "Mint state: no wear. The exact MS grade depends on marks too small for photos to show, so check with a loupe; any marks listed above may not be real. For anything worth grading, send it to PCGS or NGC."
+              ? `Mint state: no wear. The exact MS grade depends on marks too small for photos to show, so check with a loupe${g.marks?.length ? "; the marks listed above may not be real" : ""}. For anything worth grading, send it to PCGS or NGC.`
               : "A guess from photos, not a grade. Lighting and angle hide wear, cleaning and hairlines. For anything worth grading, send it to PCGS or NGC."}
           </p>
           {onNote && (saved ? (
