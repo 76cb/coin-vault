@@ -67,6 +67,23 @@ class BarDetailsIn(_Base):
     has_assay_card: bool = False
 
 
+class GoldbackDetailsIn(_Base):
+    state: str | None = Field(default=None, max_length=60)
+    denomination: Decimal | None = None
+    year: int | None = Field(default=None, ge=2019, le=2200)
+    serial_number: str | None = Field(default=None, max_length=60)
+    variety: str | None = Field(default=None, max_length=120)
+
+    @field_validator("denomination")
+    @classmethod
+    def _known(cls, v: Decimal | None) -> Decimal | None:
+        from app.services.goldbacks import DENOMINATIONS
+
+        if v is not None and Decimal(v) not in DENOMINATIONS:
+            raise ValueError("Goldbacks come in 1/4, 1/2, 1, 2, 3, 5, 10, 25, 50 and 100")
+        return v
+
+
 class BanknoteDetailsIn(_Base):
     country: str | None = Field(default=None, max_length=80)
     denomination: str | None = Field(default=None, max_length=80)
@@ -90,6 +107,7 @@ DETAIL_MODELS: dict[str, type[_Base]] = {
     "bullion": CoinDetailsIn,
     "bar": BarDetailsIn,
     "banknote": BanknoteDetailsIn,
+    "goldback": GoldbackDetailsIn,
     "lot": LotDetailsIn,
     "other": OtherDetailsIn,
 }

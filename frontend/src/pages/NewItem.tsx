@@ -22,6 +22,9 @@ export default function NewItem() {
     <>
       <div className="page-head">
         <h1>Add item</h1>
+        <div className="head-actions">
+          <Link className="button ghost" to="/goldbacks">Adding Goldbacks? Pick them</Link>
+        </div>
       </div>
       {photos.length > 0 && (
         <ChosenPhotos photos={photos} onChange={setPhotos}>

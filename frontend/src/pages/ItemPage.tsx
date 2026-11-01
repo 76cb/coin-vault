@@ -19,6 +19,8 @@ const DETAIL_LABELS: Record<string, string> = {
   mint: "Mint",
   diameter_mm: "Diameter (mm)",
   composition: "Composition",
+  state: "State or series",
+  variety: "Variety",
   weight_g: "Weight (g)",
   numista_id: "Numista N#",
   numista_issue_id: "Numista issue",

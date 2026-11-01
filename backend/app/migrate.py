@@ -22,6 +22,12 @@ def alembic_config(database_url: str | None = None) -> Config:
 
 def upgrade_to_head(engine: Engine) -> None:
     cfg = alembic_config()
+    if engine.dialect.name == "sqlite":
+        # alembic/env.py manages the transactions itself here: foreign keys go off around them
+        with engine.connect() as conn:
+            cfg.attributes["connection"] = conn
+            command.upgrade(cfg, "head")
+        return
     with engine.begin() as conn:
         if conn.dialect.name == "postgresql":
             # Only one process migrates at a time (e.g. two workers starting together).

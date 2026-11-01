@@ -17,7 +17,7 @@ from app.services.items import _grade_label, cost_basis, photo_urls
 
 ZERO = Decimal(0)
 METAL_NAMES = {"Au": "gold", "Ag": "silver", "Pt": "platinum", "Pd": "palladium"}
-KIND_LABELS = {"coin": "Coin", "bullion": "Bullion", "bar": "Bar", "banknote": "Banknote", "lot": "Junk silver lot", "other": "Other"}
+KIND_LABELS = {"coin": "Coin", "bullion": "Bullion", "bar": "Bar", "banknote": "Banknote", "goldback": "Goldback", "lot": "Junk silver lot", "other": "Other"}
 STATUS_LABELS = {"owned": "Owned", "for_sale": "For sale", "sold": "Sold"}
 
 
@@ -41,6 +41,12 @@ def describe(item: Item) -> str:
     if t == "banknote" and item.banknote:
         n = item.banknote
         return ", ".join(x for x in (" ".join(x for x in (_s(n.country), _s(n.denomination)) if x), _s(n.series)) if x)
+    if t == "goldback" and item.goldback:
+        from app.services.goldbacks import denomination_label
+
+        g = item.goldback
+        name = " ".join(x for x in (_s(g.state), "Goldback", denomination_label(g.denomination)) if x)
+        return ", ".join(x for x in (name, str(g.year) if g.year else "", _s(g.variety)) if x)
     if t == "lot" and item.lot and item.lot.face_value is not None:
         return f"{item.lot.face_value:.2f} {item.lot.face_currency} face value"
     if t == "other" and item.other and item.other.attributes:
@@ -58,6 +64,8 @@ def identifiers(item: Item) -> list[str]:
         out.append(f"Serial {item.bar.serial_number}")
     if item.banknote and item.banknote.serial_number:
         out.append(f"Serial {item.banknote.serial_number}")
+    if item.goldback and item.goldback.serial_number:
+        out.append(f"Serial {item.goldback.serial_number}")
     if item.banknote and item.banknote.pick_number:
         out.append(f"Pick {item.banknote.pick_number}")
     if item.coin and item.coin.pcgs_number:

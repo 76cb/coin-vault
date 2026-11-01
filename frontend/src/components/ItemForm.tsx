@@ -64,7 +64,19 @@ export interface FormState {
   valuation_rule: Str;
 }
 
-type FieldDef = { key: string; label: string; type?: "number" | "text" | "checkbox" | "select" | "textarea"; options?: string[]; hint?: string; list?: string; more?: boolean };
+type FieldDef = {
+  key: string; label: string; type?: "number" | "text" | "checkbox" | "select" | "textarea"; options?: string[];
+  optionLabels?: Record<string, string>; hint?: string; list?: string; more?: boolean;
+};
+
+// Goldback series (by first printing) and denominations: https://en.wikipedia.org/wiki/Goldback
+export const GOLDBACK_SERIES = [
+  "Utah", "Nevada", "New Hampshire", "Wyoming", "South Dakota", "Florida", "Oklahoma", "Arizona", "Dallas Fort Worth", "Idaho",
+  "California", "Ohio", "Washington D.C.", "Colorado",
+];
+const GOLDBACK_DENOMS: Record<string, string> = {
+  "": "Choose…", "0.25": "1/4", "0.5": "1/2", "1": "1", "2": "2", "3": "3", "5": "5", "10": "10", "25": "25", "50": "50", "100": "100",
+};
 
 // Suggestions only: any name can be typed.
 const REFINERS = [
@@ -131,6 +143,13 @@ const DETAIL_FIELDS: Record<ItemType, FieldDef[]> = {
     { key: "refiner", label: "Refiner / mint", list: "refiners" },
     { key: "serial_number", label: "Serial number" },
     { key: "has_assay_card", label: "Has assay card", type: "checkbox" },
+  ],
+  goldback: [
+    { key: "state", label: "State or series", list: "goldback-series" },
+    { key: "denomination", label: "Denomination (Goldbacks)", type: "select", options: Object.keys(GOLDBACK_DENOMS), optionLabels: GOLDBACK_DENOMS },
+    { key: "year", label: "Year", type: "number" },
+    { key: "serial_number", label: "Serial number", more: true },
+    { key: "variety", label: "Variety", hint: "Limited edition, signed, misprint…", more: true },
   ],
   banknote: [
     { key: "country", label: "Country" },
@@ -598,6 +617,13 @@ export default function ItemForm({
 
       <fieldset>
         <legend>Metal content (per piece)</legend>
+        {f.item_type === "goldback" ? (
+          <p className="muted">
+            {f.details.denomination
+              ? `${(Number(f.details.denomination) / 1000).toLocaleString(undefined, { maximumFractionDigits: 6 })} troy oz of 24-karat gold per note, worked out from the denomination (1/1000 oz per Goldback).`
+              : "The gold is worked out from the denomination: 1/1000 troy oz per Goldback."}
+          </p>
+        ) : (<>
         {f.metals.length === 0 && f.item_type !== "lot" && <p className="muted">Add the metal so melt value can be worked out from spot price.</p>}
         {f.item_type === "lot" && (
           <label className="lot-comp">
@@ -705,6 +731,10 @@ export default function ItemForm({
         <datalist id="refiners">
           {REFINERS.map((r) => <option key={r} value={r} />)}
         </datalist>
+        </>)}
+        <datalist id="goldback-series">
+          {GOLDBACK_SERIES.map((r) => <option key={r} value={r} />)}
+        </datalist>
       </fieldset>
 
       <fieldset>
@@ -790,7 +820,7 @@ function DetailInput({ def, value, onChange }: { def: FieldDef; value: string | 
         {def.label}
         <select value={String(value || def.options![0])} onChange={(e) => onChange(e.target.value)}>
           {def.options!.map((o) => (
-            <option key={o} value={o}>{o}</option>
+            <option key={o} value={o}>{def.optionLabels?.[o] ?? o}</option>
           ))}
         </select>
       </label>

@@ -132,7 +132,7 @@ IDENTIFY_SYSTEM = (
 IDENTIFY_PROMPT = """{photos}
 
 Identify this piece. Fill in:
-- kind: "coin" (a circulating or collector coin), "bullion" (a bullion coin or round sold for its metal, like an American Silver Eagle or a Maple Leaf), "bar", "banknote" or "other".
+- kind: "coin" (a circulating or collector coin), "bullion" (a bullion coin or round sold for its metal, like an American Silver Eagle or a Maple Leaf), "bar", "banknote", "goldback" (a Goldback gold note: give its state or series and its denomination in the title, like "2019 Utah Goldback 5") or "other".
 - country: the issuing country in English, like "United States". Empty for a private round or bar.
 - denomination: as written on the piece, in English, like "Quarter Dollar", "One Cent", "1 Dollar", "50 Pence". Empty for a bar or round.
 - year: the date on the piece; 0 if you can't read one.
@@ -148,7 +148,7 @@ Identify this piece. Fill in:
 IDENTIFY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "kind": {"type": "string", "enum": ["coin", "bullion", "bar", "banknote", "other"]},
+        "kind": {"type": "string", "enum": ["coin", "bullion", "bar", "banknote", "goldback", "other"]},
         "country": {"type": "string"},
         "denomination": {"type": "string"},
         "year": {"type": "integer"},
@@ -225,7 +225,7 @@ def _pcgs_numbers(*texts: str) -> tuple[str, str] | None:
 
 
 def parse_identified(d: dict[str, Any]) -> Identified:
-    kind = d.get("kind") if d.get("kind") in ("coin", "bullion", "bar", "banknote", "other") else "coin"
+    kind = d.get("kind") if d.get("kind") in ("coin", "bullion", "bar", "banknote", "goldback", "other") else "coin"
     try:
         year = int(d.get("year") or 0)
     except (TypeError, ValueError):

@@ -982,3 +982,48 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
 @media (max-width: 420px) {
   .metal-row .gross-field { grid-column: 1 / -1; }
 }
+
+/* --- Goldbacks --- */
+.gb-summary { margin-bottom: 1.5rem; }
+.gb-totals { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; align-items: baseline; margin: 0 0 0.8rem; }
+.gb-totals strong { font-size: var(--step-1); }
+.gb-table td:first-child { white-space: nowrap; }
+.gb-add { display: flex; flex-direction: column; gap: 1.2rem; }
+.gb-add h2 { margin-bottom: 0; }
+.gb-step { border: 0; padding: 0; margin: 0; min-width: 0; }
+.gb-step > legend { font-weight: 700; margin-bottom: 0.6rem; padding: 0; }
+.gb-series { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 0.5rem; }
+.gb-series-card { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; text-align: left; min-height: 3.4rem; padding: 0.5rem 0.75rem; font-weight: 400; }
+.gb-series-card.on { border-color: var(--accent-line); box-shadow: inset 0 0 0 1px var(--accent-line); background: var(--gold-tint); }
+:root[data-theme="dark"] .gb-series-card.on { background: rgba(201, 176, 122, 0.12); }
+.gb-series-name { font-weight: 700; }
+.gb-series-year { font-size: var(--step--1); color: var(--ink-2); }
+.gb-other { margin-top: 0.6rem; max-width: 22rem; }
+.gb-denoms { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.75rem; }
+.gb-note { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.6rem; border: 1px solid var(--hairline); border-radius: var(--r); background: var(--surface); }
+.gb-note.on { border-color: var(--champagne); }
+/* a plain card, drawn by the app: the denomination large on a gold field */
+.gb-note-face { display: grid; grid-template-rows: auto 1fr auto; aspect-ratio: 2.6 / 1.4; padding: 0.4rem 0.55rem; border-radius: 6px;
+  background: linear-gradient(135deg, #e9d79f, #c9a752 55%, #e6cf8c); color: #3d2d07; border: 1px solid #a9883a; }
+.gb-note-state { font-size: 0.72rem; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb-note-value { font-size: 1.9rem; font-weight: 800; line-height: 1; align-self: center; font-variant-numeric: tabular-nums; }
+.gb-note-word { font-size: 0.72rem; justify-self: end; }
+.gb-note-gold { margin: 0; }
+.gb-stepper { display: grid; grid-template-columns: 2.6rem 1fr 2.6rem; gap: 0.3rem; align-items: center; }
+.gb-stepper input { text-align: center; padding-inline: 0.2rem; min-width: 0; -moz-appearance: textfield; }
+.gb-stepper input::-webkit-inner-spin-button, .gb-stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.gb-stepper button { min-height: 44px; font-size: 1.2rem; padding: 0; }
+.gb-paid { display: flex; flex-direction: column; gap: 0.2rem; margin: 0; font-size: var(--step--1); }
+.gb-more { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.8rem 1rem; }
+.gb-more > legend { grid-column: 1 / -1; }
+.gb-more label { margin: 0; }
+.gb-save { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; padding-top: 0.9rem; border-top: 1px solid var(--hairline); }
+@media (max-width: 560px) {
+  .gb-series { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gb-denoms { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+  .gb-note { padding: 0.45rem; }
+  .gb-note-value { font-size: 1.5rem; }
+  .gb-stepper { grid-template-columns: 2.2rem 1fr 2.2rem; }
+  .gb-table .gb-wide { display: none; }
+  .gb-table th, .gb-table td { padding-inline: 0.3rem; }
+}

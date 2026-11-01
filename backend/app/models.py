@@ -37,7 +37,7 @@ MONEY = Numeric(14, 4)
 WEIGHT = Numeric(14, 6)
 FINENESS = Numeric(6, 5)
 
-ITEM_TYPES = ("coin", "bullion", "bar", "banknote", "lot", "other")
+ITEM_TYPES = ("coin", "bullion", "bar", "banknote", "goldback", "lot", "other")
 ITEM_STATUSES = ("owned", "for_sale", "sold")
 COST_STATUSES = ("known", "estimated", "unknown")
 VALUATION_RULES = ("max", "melt", "market", "cost")
@@ -201,6 +201,7 @@ class Item(Base):
     coin: Mapped[CoinDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
     bar: Mapped[BarDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
     banknote: Mapped[BanknoteDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
+    goldback: Mapped[GoldbackDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
     lot: Mapped[LotDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
     other: Mapped[OtherDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
     metal_content: Mapped[list[ItemMetalContent]] = relationship(
@@ -268,6 +269,16 @@ class BanknoteDetails(Base):
     series: Mapped[str | None] = mapped_column(String(80))
     serial_number: Mapped[str | None] = mapped_column(String(60))
     pick_number: Mapped[str | None] = mapped_column(String(30))
+
+
+class GoldbackDetails(Base):
+    __tablename__ = "goldback_details"
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
+    state: Mapped[str | None] = mapped_column(String(60))  # the series: Utah, Nevada, Wyoming...
+    denomination: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))  # in Goldbacks: 1/2, 1, 5, 25...
+    year: Mapped[int | None] = mapped_column(Integer)
+    serial_number: Mapped[str | None] = mapped_column(String(60))
+    variety: Mapped[str | None] = mapped_column(String(120))  # limited edition, signed, misprint...
 
 
 class LotDetails(Base):

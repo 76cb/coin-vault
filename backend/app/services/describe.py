@@ -205,11 +205,55 @@ def _size_g(amount: str, unit: str) -> tuple[Decimal, str, str]:
     return qty, amount, "g"
 
 
+GOLDBACK_RE = re.compile(r"\bgold\s?backs?\b", re.I)
+GOLDBACK_DENOM = re.compile(r"(?<![\d/.])(1/4|1/2|½|¼|\d{1,3})\s*(?:gb\b|goldbacks?\b)|\bgoldbacks?\s*(1/4|1/2|½|¼|\d{1,3})(?![\d/])", re.I)
+
+
+def _goldback(raw: str) -> Described:
+    """"Utah Goldback 5 2019", "10 x 1/2 Goldback Nevada": series, denomination, year and how many."""
+    from app.services.goldbacks import DENOMINATIONS, SERIES, title
+
+    d = Described(item_type="goldback", title=raw[:300])
+    low = raw.lower()
+    state = next((name for name, _ in sorted(SERIES, key=lambda s: -len(s[0])) if name.lower().replace(".", "") in low.replace(".", "")), None)
+    if state is None and re.search(r"\b(dfw|dallas|texas)\b", low):
+        state = "Dallas Fort Worth"
+    if state is None and re.search(r"\b(?:dc|washington)\b", low):
+        state = "Washington D.C."
+    denom = None
+    rest = re.sub(r"\b(19|20)\d\d\b", " ", raw)  # a year is never the denomination
+    count = re.search(r"\b(\d{1,4})\s*(?:x|×)\s*", rest, re.I) or re.search(r"\b(?:qty:?|lot\s*of|quantity:?)\s*(\d{1,4})\b", rest, re.I)
+    if count:
+        d.quantity = max(1, int(count.group(1)))
+        rest = rest[: count.start()] + " " + rest[count.end():]
+    m = GOLDBACK_DENOM.search(rest)
+    v = (m.group(1) or m.group(2)) if m else None
+    if v is None:  # "Goldback Dallas Fort Worth 50": the one number left over
+        loose = re.findall(r"(?<![\d/.])(1/4|1/2|½|¼|\d{1,3})(?![\d/])", rest)
+        v = loose[0] if len(loose) == 1 else None
+    if v:
+        v = v.replace("½", "1/2").replace("¼", "1/4")
+        denom = Decimal(1) / Decimal(v.split("/")[1]) if "/" in v else Decimal(v)
+        if denom not in DENOMINATIONS:
+            denom = None
+    ym = re.search(r"\b(20[1-9]\d)\b", raw)
+    year = int(ym.group(1)) if ym else None
+    d.details = {k: v for k, v in {"state": state, "denomination": str(denom) if denom is not None else None, "year": year}.items() if v is not None}
+    d.metal = "Au"
+    d.title = title(state, denom, year) if (state or denom is not None) else raw[:300]
+    d.recognized = [x for x in ("Goldback", state, f"{denom.normalize():f} Goldback" if denom is not None else None, str(year) if year else None) if x]
+    if d.quantity > 1:
+        d.recognized.append(f"quantity {d.quantity}")
+    return d
+
+
 def describe(text: str) -> Described:
     raw = re.sub(r"\s+", " ", text or "").strip()
     d = Described(title=raw[:300])
     if not raw:
         return d
+    if GOLDBACK_RE.search(raw):
+        return _goldback(raw)
     # "G$5" (NGC's gold $5): note the metal, and read the rest as an ordinary "$5"
     md = METAL_DOLLAR.search(raw)
     if md:

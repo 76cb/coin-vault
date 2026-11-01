@@ -8,6 +8,7 @@ import ErrorBoundary from "./ErrorBoundary";
 import ThemeToggle from "./components/ThemeToggle";
 import Collection from "./pages/Collection";
 import Dashboard from "./pages/Dashboard";
+import Goldbacks from "./pages/Goldbacks";
 import ItemPage from "./pages/ItemPage";
 import Login from "./pages/Login";
 import NewItem from "./pages/NewItem";
@@ -57,6 +58,7 @@ export default function App() {
           <NavLink to="/" end>Collection</NavLink>
           <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/photos">Photos</NavLink>
+          <NavLink to="/goldbacks">Goldbacks</NavLink>
           <NavLink to="/upload">Upload photos</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
@@ -74,6 +76,7 @@ export default function App() {
           <Route path="/items/new" element={<NewItem />} />
           <Route path="/items/:id" element={<ItemPage />} />
           <Route path="/photos" element={<Photos />} />
+          <Route path="/goldbacks" element={<Goldbacks />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="/report" element={<Report />} />
           <Route path="/settings" element={<Settings user={me.data.user.username} admin={me.data.user.is_admin} />} />

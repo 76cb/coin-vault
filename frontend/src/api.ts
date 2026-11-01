@@ -1,6 +1,6 @@
 // Thin typed client for the Coin Vault API. Session cookie + CSRF header on writes.
 
-export type ItemType = "coin" | "bullion" | "bar" | "banknote" | "lot" | "other";
+export type ItemType = "coin" | "bullion" | "bar" | "banknote" | "goldback" | "lot" | "other";
 export type ItemStatus = "owned" | "for_sale" | "sold";
 export type CostStatus = "known" | "estimated" | "unknown";
 export type PhotoRole = "obverse" | "reverse" | "edge" | "slab_front" | "slab_back" | "other";
@@ -11,6 +11,7 @@ export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
   bullion: "Bullion coin or round",
   bar: "Bar",
   banknote: "Banknote",
+  goldback: "Goldback",
   lot: "Junk / constant-content lot",
   other: "Other",
 };
@@ -473,6 +474,39 @@ export interface Valuation {
   created_at: string;
 }
 
+export interface GoldbackCatalogue {
+  series: { name: string; first_year: number }[];
+  denominations: { value: string; label: string; gold_toz: string; common: boolean }[];
+  source: string;
+}
+export interface GoldbackSummaryRow {
+  state: string | null;
+  denomination: string | null;
+  label: string;
+  notes: number;
+  goldbacks: string;
+  gold_toz: string;
+  melt: string | null;
+  item_ids: number[];
+}
+export interface GoldbackSummary {
+  currency: string;
+  rows: GoldbackSummaryRow[];
+  notes: number;
+  goldbacks: string;
+  gold_toz: string;
+  melt: string | null;
+}
+export interface GoldbackAdd {
+  state: string;
+  year?: number | null;
+  variety?: string | null;
+  acquired_date?: string | null;
+  location_id?: number | null;
+  purchase_source?: string | null;
+  rows: { denomination: string; quantity: number; price_total?: string | null }[];
+}
+
 export interface AiStatus {
   ready: boolean;
   model: string | null;
@@ -875,6 +909,9 @@ export const api = {
     request<{ count: number; types: NumistaHit[] }>("GET", `${A}/numista/search?${new URLSearchParams(year ? { q, year } : { q })}`),
   numistaType: (id: number) => request<NumistaType>("GET", `${A}/numista/types/${id}`),
   numistaEstimate: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/numista/estimate`),
+  goldbackCatalogue: () => request<GoldbackCatalogue>("GET", `${A}/goldbacks/catalogue`),
+  goldbackSummary: () => request<GoldbackSummary>("GET", `${A}/goldbacks/summary`),
+  addGoldbacks: (body: GoldbackAdd) => request<{ item_ids: number[] }>("POST", `${A}/goldbacks`, body),
   aiStatus: () => request<AiStatus>("GET", `${A}/ai`),
   aiSettings: () => request<AiSettings>("GET", `${A}/ai/settings`),
   saveAiSettings: (body: { url: string; model: string }) => request<AiSettings>("PUT", `${A}/ai/settings`, body),

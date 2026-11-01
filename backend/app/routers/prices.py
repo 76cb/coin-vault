@@ -29,6 +29,7 @@ TYPE_LABELS = {
     "bullion": "Bullion coins and rounds",
     "bar": "Bars",
     "banknote": "Banknotes",
+    "goldback": "Goldbacks",
     "lot": "Junk silver lots",
     "other": "Other",
 }

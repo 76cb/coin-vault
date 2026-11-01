@@ -19,6 +19,7 @@ from app.models import (
     User,
     AuditLog,
     BanknoteDetails,
+    GoldbackDetails,
     BarDetails,
     CoinDetails,
     Composition,
@@ -52,11 +53,12 @@ TROY_OUNCE_G = Decimal("31.1034768")
 UNIT_GRAMS = {"g": Decimal(1), "ozt": TROY_OUNCE_G, "kg": Decimal(1000), "tola": Decimal("11.6638038")}
 PURE_QUANT = Decimal("0.000001")
 
-DETAIL_ATTR = {"coin": "coin", "bullion": "coin", "bar": "bar", "banknote": "banknote", "lot": "lot", "other": "other"}
+DETAIL_ATTR = {"coin": "coin", "bullion": "coin", "bar": "bar", "banknote": "banknote", "goldback": "goldback", "lot": "lot", "other": "other"}
 DETAIL_CLASS = {
     "coin": CoinDetails,
     "bar": BarDetails,
     "banknote": BanknoteDetails,
+    "goldback": GoldbackDetails,
     "lot": LotDetails,
     "other": OtherDetails,
 }
@@ -346,6 +348,17 @@ def fill_base_metal(item: Item) -> None:
             c.weight_g = hit.weight_g
 
 
+def fill_goldback_gold(db: Session, item: Item) -> None:
+    """A Goldback's gold follows from its denomination (1/1000 troy oz per Goldback), so it's set, not typed."""
+    from app.services.goldbacks import gold_toz
+
+    if item.item_type != "goldback":
+        return
+    oz = gold_toz(item.goldback.denomination if item.goldback is not None else None)
+    rows = [MetalContentIn(metal="Au", pure_toz=oz)] if oz else []
+    _apply_metal_content(db, item, rows)
+
+
 def create_item(db: Session, principal: Principal, body: ItemCreate) -> Item:
     data = body.model_dump(exclude_unset=True)
     owned_location(db, principal.owner_id, data.get("location_id"))
@@ -365,6 +378,7 @@ def create_item(db: Session, principal: Principal, body: ItemCreate) -> Item:
         _apply_metal_content(db, item, body.metal_content)
     db.flush()
     fill_base_metal(item)
+    fill_goldback_gold(db, item)
     if body.tags:
         item.tags = resolve_tags(db, principal.owner_id, body.tags)
     db.flush()
@@ -409,6 +423,7 @@ def update_item(db: Session, principal: Principal, item: Item, body: ItemUpdate,
     if "details" in data or "metal_content" in data or type_changed:
         db.flush()
         fill_base_metal(item)
+        fill_goldback_gold(db, item)
     if "tags" in data:
         item.tags = resolve_tags(db, principal.owner_id, body.tags or [])
     item.version += 1

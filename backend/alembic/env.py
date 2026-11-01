@@ -43,14 +43,29 @@ def run_migrations_online() -> None:
 
 
 def _run(connection) -> None:
+    sqlite = connection.dialect.name == "sqlite"
+    if sqlite:
+        # Rebuilding a table (SQLite's only way to change a constraint) drops the old one; with foreign keys on,
+        # that would cascade-delete every row pointing at it. Off for the migration (it can't change inside a
+        # transaction, so before it starts), checked and back on after.
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.commit()
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
-        render_as_batch=connection.dialect.name == "sqlite",
+        render_as_batch=sqlite,
         compare_type=True,
     )
     with context.begin_transaction():
         context.run_migrations()
+    if sqlite:
+        if connection.in_transaction():
+            connection.commit()
+        broken = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        connection.commit()
+        if broken:
+            raise RuntimeError(f"The migration left rows pointing at missing rows: {broken[:5]}")
 
 
 if context.is_offline_mode():
