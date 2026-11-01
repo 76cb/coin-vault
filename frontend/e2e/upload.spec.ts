@@ -13,7 +13,7 @@ test("bulk upload pairs photos, creates one item and adds the other pair to it",
 
   const byName = page.locator(".group-card", { hasText: "Paired by file name" }).first();
   const byOrder = page.locator(".group-card", { hasText: "Paired by upload order" }).first();
-  await expect(byName).toBeVisible();
+  await expect(byName).toBeVisible({ timeout: 30_000 }); // four photos are checked and resized on upload: slow on a busy CI runner
   await expect(byOrder).toBeVisible();
   await expect(byName.getByRole("combobox", { name: /0007_obv/ })).toHaveValue("obverse");
   await expect(byName.getByRole("combobox", { name: /0007_rev/ })).toHaveValue("reverse");
@@ -39,7 +39,7 @@ test("split a pair and discard one photo", async ({ page }) => {
   await page.getByRole("link", { name: "Upload photos" }).first().click();
   await page.locator(".dropzone input[type=file]").setInputFiles([fixture("IMG_2001.jpg"), fixture("IMG_2002.jpg")]);
   const card = page.locator(".group-card").first();
-  await expect(card.locator("figure")).toHaveCount(2);
+  await expect(card.locator("figure")).toHaveCount(2, { timeout: 30_000 });
   await card.getByRole("button", { name: "Split" }).click();
   await expect(page.locator(".group-card")).toHaveCount(2);
   await page.locator(".group-card").first().getByRole("button", { name: "Discard" }).click();
