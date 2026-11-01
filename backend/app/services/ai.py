@@ -293,14 +293,14 @@ Estimate the grade of this raw (not slabbed) coin from its photos. Photos can hi
 
 Grade the wear and surfaces only. Don't judge whether the coin is genuine: photos can't show that, and lettering that looks crowded or run together (like IN GOD WE TRUST on a Washington quarter) is usually just how the design was engraved. Don't call anything counterfeit, fake or an error.
 
-For a coin with no wear (mint state), the grade comes from its marks, luster and strike, judged against coins of its kind. First list each mark you can actually see and where it is. As a guide: MS70, no marks even under magnification; MS69, one or two tiny marks; MS67 to MS68, a few small marks away from the main design; MS65 to MS66, several small marks or one you notice straight away; MS63 to MS64, many marks or some in prominent places; MS60 to MS62, heavy marks or dull, broken luster. Modern coins (from about 1980) and bullion coins usually leave the mint at MS67 to MS70, so grade one of those lower only for marks you've listed.
+For a coin with no wear (mint state), the grade comes from its marks, luster and strike, judged against coins of its kind. First list each mark you can actually see and where it is. As a guide: MS70, no marks even under magnification; MS69, one or two tiny marks; MS67 to MS68, a few small marks away from the main design; MS65 to MS66, several small marks or one you notice straight away; MS63 to MS64, many marks or some in prominent places; MS60 to MS62, heavy marks or dull, broken luster. Modern coins (from about 1980) and bullion coins usually leave the mint at MS67 to MS70, so grade one of those lower only for marks you can clearly see.
 
 Fill in:
 - low and high: Sheldon grades with their prefix, like "VF20" and "VF30", or "MS62" and "MS64". Prefixes: P, FR, AG, G, VG, F, VF, EF, AU, MS, and PR for proofs.
 - summary: one sentence on the grade, in plain words.
 - wear: what the high points show.
 - surfaces: luster, marks, toning.
-- marks: each mark you can see, with where it is, like "small tick on the cheek". An empty list if you see none.
+- marks: each mark you can clearly see in these photos, with where it is, like "small tick on the cheek". Name places by what is actually on this coin; never mention design elements you can't see. Small marks are usually too small to see in a photo, so an empty list is the normal answer; don't guess.
 - problems: damage that would make it a "Details" grade (cleaning, scratches, rim damage, corrosion, holes, tooling). An empty list if you see none.
 - photo_advice: what other photos would help settle the grade, like an angled shot to show luster. Empty if the photos are good enough."""
 
