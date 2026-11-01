@@ -2,7 +2,7 @@
 
 ROWS_V1 is loaded by migration 0002; ROWS_V2 (bars by refiner, more bullion coins) by migration 0004,
 ROWS_V3 (US silver proofs) by 0005, ROWS_V4 (the world catalogue, app/data/catalogue) by 0006
-and ROWS_V5 (more of the catalogue) by 0007.
+ROWS_V5 (more of the catalogue) by 0007 and ROWS_V6 (Perth Mint platinum Lunar coins) by 0011.
 
 Pure weight = gross weight (g) / 31.1034768 x fineness, rounded to 6 decimals, from each mint's
 published specifications. Bullion uses the mint's stated pure content. Per-face rows give pure
@@ -310,7 +310,9 @@ def load_catalogue(files: list[str], directory: Path = CATALOGUE_DIR) -> list[di
 # Each migration loads a fixed list of files, so a file added later gets its own migration.
 CATALOGUE_V4 = ["americas.json", "europe.json", "uk_commonwealth.json", "us_expanded.json", "world_bullion_asia.json"]
 CATALOGUE_V5 = ["americas_2.json", "bullion_2.json", "europe_2.json"]
+CATALOGUE_V6 = ["bullion_3.json"]
 ROWS_V4 = load_catalogue(CATALOGUE_V4)
 ROWS_V5 = load_catalogue(CATALOGUE_V5)
+ROWS_V6 = load_catalogue(CATALOGUE_V6)
 
-ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5
+ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6

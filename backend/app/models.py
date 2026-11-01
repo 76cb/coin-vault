@@ -240,6 +240,8 @@ class CoinDetails(Base):
     product_line: Mapped[str | None] = mapped_column(String(120))
     mint: Mapped[str | None] = mapped_column(String(120))
     diameter_mm: Mapped[Decimal | None] = mapped_column(Numeric(7, 2))
+    composition: Mapped[str | None] = mapped_column(String(160))  # what it's made of, in words ("Copper-plated zinc")
+    weight_g: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))  # the coin's own weight
     numista_id: Mapped[int | None] = mapped_column(Integer)
     numista_issue_id: Mapped[int | None] = mapped_column(Integer)
     pcgs_number: Mapped[str | None] = mapped_column(String(20))

@@ -18,6 +18,8 @@ const DETAIL_LABELS: Record<string, string> = {
   product_line: "Product",
   mint: "Mint",
   diameter_mm: "Diameter (mm)",
+  composition: "Composition",
+  weight_g: "Weight (g)",
   numista_id: "Numista N#",
   numista_issue_id: "Numista issue",
   pcgs_number: "PCGS number",
@@ -173,7 +175,11 @@ export default function ItemPage() {
                   </tbody>
                 </table>
               ) : (
-                <p className="muted">No metal content recorded. Melt value needs it.</p>
+                <p className="muted">
+                  {it.details.composition
+                    ? `No precious metal: ${String(it.details.composition).replace(/^./, (c) => c.toLowerCase())}. Melt value is only for gold, silver, platinum and palladium.`
+                    : "No metal content recorded. Melt value needs it."}
+                </p>
               )}
 
               <h2>Purchase</h2>

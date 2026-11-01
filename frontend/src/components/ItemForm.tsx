@@ -5,9 +5,32 @@ import { api, Composition, CostStatus, Described, Item, ITEM_TYPE_LABELS, ItemSt
 import ReferencePicker from "./ReferencePicker";
 
 type Str = string;
+export type WeightUnitKey = "g" | "ozt" | "dwt" | "gr" | "kg";
+/** Grams in one of each: troy ounce, pennyweight, grain, kilogram. */
+export const GRAMS_PER: Record<WeightUnitKey, number> = { g: 1, ozt: 31.1034768, dwt: 1.55517384, gr: 0.06479891, kg: 1000 };
+const UNIT_LABELS: [WeightUnitKey, string][] = [["g", "g"], ["ozt", "ozt"], ["dwt", "dwt"], ["gr", "grains"], ["kg", "kg"]];
+
+/** "31.1", "1/10" or "1 1/2" as a number; NaN for anything else. */
+export function parseAmount(v: string): number {
+  const t = v.trim().replace(",", ".");
+  const mixed = /^(\d+)\s+(\d+)\/(\d+)$/.exec(t);
+  if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
+  const frac = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/.exec(t);
+  if (frac) return Number(frac[1]) / Number(frac[2]);
+  return t === "" ? NaN : Number(t);
+}
+
+/** The gross weight in grams, as the server stores it ("" when blank or not a number). */
+export function grossGrams(m: { gross_weight_g: Str; gross_unit?: WeightUnitKey }): string {
+  const n = parseAmount(m.gross_weight_g);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return String(Math.round(n * GRAMS_PER[m.gross_unit ?? "g"] * 1e6) / 1e6);
+}
+
 interface MetalRow {
   metal: Metal;
-  gross_weight_g: Str;
+  gross_weight_g: Str; // as typed, in gross_unit
+  gross_unit?: WeightUnitKey; // what the gross weight is typed in (grams when not set)
   fineness: Str;
   pure_toz: Str; // empty = computed
   composition_id: Str; // empty = none
@@ -79,6 +102,8 @@ const COIN_FIELDS: FieldDef[] = [
   { key: "year", label: "Year", type: "number" },
   { key: "mint_mark", label: "Mint mark" },
   { key: "series", label: "Series" },
+  { key: "composition", label: "Composition", hint: "Filled in for US coins with no precious metal" },
+  { key: "weight_g", label: "Coin weight (g)", type: "number", more: true },
   { key: "variety_notes", label: "Variety, label or pedigree", type: "textarea", more: true },
   { key: "pcgs_number", label: "PCGS number", more: true },
   { key: "numista_id", label: "Numista N#", type: "number", more: true },
@@ -340,7 +365,7 @@ export function toPayload(f: FormState): Record<string, unknown> {
     condition,
     metal_content: f.metals.map((m) => ({
       metal: m.metal,
-      gross_weight_g: nul(m.gross_weight_g),
+      gross_weight_g: m.gross_weight_g.trim() ? grossGrams(m) || m.gross_weight_g.trim() : null,
       fineness: nul(m.fineness),
       pure_toz: nul(m.pure_toz),
       composition_id: m.composition_id ? Number(m.composition_id) : null,
@@ -356,10 +381,11 @@ function fmtToz(v: string | number): string {
 function previewPure(m: MetalRow, comp?: Composition): string {
   if (m.pure_toz) return `${m.pure_toz} ozt (your override)`;
   if (comp && !m.gross_weight_g && !m.fineness) return `${fmtToz(comp.pure_toz)} ozt pure, from the reference: ${comp.label}`;
-  const g = Number(m.gross_weight_g);
+  const g = Number(grossGrams(m));
   const f = Number(m.fineness);
   if (!m.gross_weight_g || !m.fineness || !g || !f) return "";
-  return `≈ ${((g / 31.1034768) * f).toFixed(4)} ozt pure`;
+  const grams = (m.gross_unit ?? "g") !== "g" ? `${g.toLocaleString(undefined, { maximumFractionDigits: 3 })} g, ` : "";
+  return `${grams}≈ ${((g / 31.1034768) * f).toFixed(4)} ozt pure`;
 }
 
 export default function ItemForm({
@@ -630,10 +656,31 @@ export default function ItemForm({
                 ))}
               </select>
             </label>
-            <label>
-              Gross weight (g)
-              <input inputMode="decimal" value={m.gross_weight_g} onChange={(e) => setMetal(i, { gross_weight_g: e.target.value })} placeholder={comp?.gross_weight_g ? fmtToz(comp.gross_weight_g) : f.item_type === "bar" ? "from bar weight" : ""} />
-            </label>
+            <div className="gross-field">
+              <label htmlFor={`gross-${i}`}>Gross weight</label>
+              <span className="gross-inputs">
+                <input
+                  id={`gross-${i}`}
+                  inputMode="decimal"
+                  value={m.gross_weight_g}
+                  onChange={(e) => setMetal(i, { gross_weight_g: e.target.value })}
+                  placeholder={comp?.gross_weight_g ? fmtToz(Number(comp.gross_weight_g) / GRAMS_PER[m.gross_unit ?? "g"]) : f.item_type === "bar" ? "from bar weight" : ""}
+                />
+                <select
+                  aria-label="Gross weight unit"
+                  value={m.gross_unit ?? "g"}
+                  onChange={(e) => {
+                    const unit = e.target.value as WeightUnitKey;
+                    // a typed weight is converted, so changing the unit never changes the amount of metal
+                    const grams = Number(grossGrams(m));
+                    const shown = grams ? String(Math.round((grams / GRAMS_PER[unit]) * 1e6) / 1e6) : m.gross_weight_g;
+                    setMetal(i, { gross_unit: unit, gross_weight_g: shown });
+                  }}
+                >
+                  {UNIT_LABELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+              </span>
+            </div>
             <label>
               Fineness
               <input inputMode="decimal" list="finenesses" value={m.fineness} onChange={(e) => setMetal(i, { fineness: e.target.value })} placeholder={comp?.fineness ? String(Number(comp.fineness)) : "0.999"} />

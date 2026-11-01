@@ -20,7 +20,8 @@ A self-hosted app for cataloguing and valuing a personal precious-metals and coi
 - **API tokens:** scoped (`items:read`, `items:write`, `prices:read`, `export`), with optional expiry and revocation. They're meant for scripts and other tools on your LAN.
 - **Items:** six types (coin, bullion coin or round, bar, banknote, junk/constant-content lot, other), each with its own fields.
   - Condition is raw (Sheldon grade or descriptive) or slabbed (company, grade, cert number, designations such as CAC).
-  - Metal content is entered per piece. Pure troy ounces are computed from gross weight × fineness, and you can override them. Bars convert g, ozt, kg and tola.
+  - Metal content is entered per piece. Pure troy ounces are computed from gross weight × fineness, and you can override them. Gross weight can be typed in grams, troy ounces, pennyweight, grains or kilograms (fractions like 1/10 work); it's stored in grams. Bars convert g, ozt, kg and tola.
+  - US coins with no precious metal (zinc cents, nickels, clad dimes, quarters, halves and dollars) get their composition and weight filled in from the date and denomination, from the US Mint's specifications and Wikipedia for earlier years. The 1982 cent says to weigh it; the 1942–1945 silver nickels and the silver issues use their silver reference instead.
   - Purchase price is optional: mark a cost as known, estimated or unknown.
   - Each item also has storage location (nested), tags, status and sale details.
 - **Quick add:** paste a listing title ("2021 $1 Silver Eagle T2 First Production PCGS MS70") and the form fills in type, year, product or series, grading company, grade, designations, quantity and the matching reference composition. You check it, add the price, and save. Rarely used fields sit under "More details".

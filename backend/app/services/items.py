@@ -332,6 +332,20 @@ def _check_sale(item: Item) -> None:
         raise HTTPException(422, "A sold item needs a sale date and sale price")
 
 
+def fill_base_metal(item: Item) -> None:
+    """A US coin with no precious metal recorded gets its composition and weight filled in, where blank."""
+    from app.services.base_metals import lookup
+
+    c = item.coin
+    if item.item_type != "coin" or c is None or c.composition or item.metal_content:
+        return
+    hit = lookup(c.country, c.denomination, c.year, c.mint_mark, c.series)
+    if hit is not None:
+        c.composition = hit.composition
+        if c.weight_g is None:
+            c.weight_g = hit.weight_g
+
+
 def create_item(db: Session, principal: Principal, body: ItemCreate) -> Item:
     data = body.model_dump(exclude_unset=True)
     owned_location(db, principal.owner_id, data.get("location_id"))
@@ -349,6 +363,8 @@ def create_item(db: Session, principal: Principal, body: ItemCreate) -> Item:
         _apply_condition(item, body.condition)
     if body.metal_content:
         _apply_metal_content(db, item, body.metal_content)
+    db.flush()
+    fill_base_metal(item)
     if body.tags:
         item.tags = resolve_tags(db, principal.owner_id, body.tags)
     db.flush()
@@ -390,6 +406,9 @@ def update_item(db: Session, principal: Principal, item: Item, body: ItemUpdate,
         _apply_condition(item, body.condition)
     if "metal_content" in data:
         _apply_metal_content(db, item, body.metal_content or [])
+    if "details" in data or "metal_content" in data or type_changed:
+        db.flush()
+        fill_base_metal(item)
     if "tags" in data:
         item.tags = resolve_tags(db, principal.owner_id, body.tags or [])
     item.version += 1

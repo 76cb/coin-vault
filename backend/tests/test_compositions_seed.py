@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from app.compositions_seed import (
-    CATALOGUE_DIR, CATALOGUE_V4, CATALOGUE_V5, ROWS, ROWS_V1, ROWS_V2, ROWS_V3, ROWS_V4, ROWS_V5, _bar, _catalogue_row, _product,
+    CATALOGUE_DIR, CATALOGUE_V4, CATALOGUE_V5, CATALOGUE_V6, ROWS, ROWS_V1, ROWS_V2, ROWS_V3, ROWS_V4, ROWS_V5, ROWS_V6, _bar, _catalogue_row, _product,
 )
 
 
@@ -21,11 +21,11 @@ def test_seed_rows_are_consistent():
     keys = [r["key"] for r in ROWS]
     assert len(keys) == len(set(keys)), "duplicate keys"
     assert ROWS[: len(ROWS_V1)] == ROWS_V1
-    assert ROWS == ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5
+    assert ROWS == ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6
     # every catalogue file is loaded by exactly one migration
-    files = CATALOGUE_V4 + CATALOGUE_V5
+    files = CATALOGUE_V4 + CATALOGUE_V5 + CATALOGUE_V6
     assert sorted(files) == sorted(p.name for p in CATALOGUE_DIR.glob("*.json")) and len(files) == len(set(files))
-    for r in ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5:
+    for r in ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6:
         assert len(r["key"]) <= 120 and len(r["label"]) <= 200
         assert r["pure_toz"] > 0, r["label"]
         assert r["fineness"] is None or Decimal(0) < r["fineness"] <= 1, r["label"]

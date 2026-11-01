@@ -114,7 +114,8 @@ BULLION: list[tuple[str, str, str, str]] = [
     (r"\bkangaroo\b", "Kangaroo", "Australia", "Au"),
     (r"\bkookaburra\b", "Kookaburra", "Australia", "Ag"),
     (r"\bkoala\b", "Koala", "Australia", "Ag"),
-    (r"\blunar\b", "Lunar series", "Australia", "Ag"),
+    (r"\blunar\b|\byear\s+of\s+the\s+(?:rat|mouse|ox|tiger|rabbit|hare|dragon|snake|horse|goat|sheep|ram|monkey|rooster|dog|pig)\b",
+     "Lunar series", "Australia", "Ag"),
     (r"\bpanda\b", "Panda", "China", "Ag"),
     (r"\bkrugerrand\b", "Krugerrand", "South Africa", "Au"),
     (r"\bsovereign\b", "Sovereign", "United Kingdom", "Au"),
@@ -150,6 +151,11 @@ DIRECT_KEYS = {
 GOLD_MAPLE_SIZES = {"1": "maple-au-1oz", "1/2": "maple-au-half", "1/4": "maple-au-quarter", "1/10": "maple-au-tenth", "1/20": "maple-au-twentieth"}
 
 METAL_WORDS = {"gold": "Au", "silver": "Ag", "platinum": "Pt", "palladium": "Pd"}
+# chemical symbols as written on coins and labels ("1oz 9999 Ag", "Pt $15"), matched in this exact case
+METAL_SYMBOLS = re.compile(r"(?<![A-Za-z])(Au|Ag|Pt|Pd)(?![A-Za-z])")
+# NGC labels put the metal before the dollar sign: G$5 gold, S$1 silver, P$15 platinum
+METAL_DOLLAR = re.compile(r"(?<![A-Za-z])(G|S|P|Pt|Pd)\$(?=\s?\d)")
+METAL_DOLLAR_CODES = {"G": "Au", "S": "Ag", "P": "Pt", "Pt": "Pt", "Pd": "Pd"}
 DENOM_RE = re.compile(
     r"(?<![\w.])\$\s?(\d+(?:\.\d{2})?)(?!\s*(?:face|fv))\b|\b(\d{1,2})\s?c(?:ents?)?\b|"
     r"\b(half\s*dollar|quarter\s*dollar|dime|quarter|nickel|cent|penny|dollar)\b",
@@ -204,13 +210,20 @@ def describe(text: str) -> Described:
     d = Described(title=raw[:300])
     if not raw:
         return d
+    # "G$5" (NGC's gold $5): note the metal, and read the rest as an ordinary "$5"
+    md = METAL_DOLLAR.search(raw)
+    if md:
+        d.metal = METAL_DOLLAR_CODES[md.group(1)]
+        raw = METAL_DOLLAR.sub(" $", raw).replace("  ", " ")
     low = raw.lower()
 
     # --- metal and size ---
     for word, metal in METAL_WORDS.items():
-        if re.search(rf"\b{word}\b", low):
+        if d.metal is None and re.search(rf"\b{word}\b", low):
             d.metal = metal
             break
+    if d.metal is None and (sym := METAL_SYMBOLS.search(raw)):
+        d.metal = sym.group(1)
     size = SIZE_RE.search(raw)
     # "100x 1 gram" is a CombiBar-style multi-piece bar: 100 x 1 g = 100 g
     multi = re.search(r"\b(\d{1,3})\s?x\s?(\d+(?:\.\d+)?)\s?(g|gram|grams|oz)\b", raw, re.I)
@@ -365,7 +378,8 @@ def describe(text: str) -> Described:
         generic = ("Maple Leaf", "Britannia", "Philharmonic", "Libertad", "Kangaroo", "Panda", "Krugerrand", "Kookaburra", "Koala",
                    "Lunar series", "Queen's Beasts", "Tudor Beasts", "Noah's Ark", "Somalian Elephant", "Swan", "Platypus", "Wildlife series")
         d.details["product_line"] = f"{word} {line}" if line in generic else line
-        d.details["country"] = country
+        # several mints strike Lunar coins: a country named in the title wins
+        d.details["country"] = (find_country(raw) or country) if line == "Lunar series" else country
         dn = DENOM_RE.search(raw)
         if dn and dn.group(1):
             d.details["denomination"] = f"${dn.group(1)}"

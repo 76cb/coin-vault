@@ -79,7 +79,9 @@ export default function QuickStart({ onUse }: { onUse: (defaults: Partial<FormSt
                 ? `Metal: could be ${tied.map((c) => c.label).join(" or ")}; pick one below.`
                 : result.item_type === "banknote" || result.item_type === "other"
                   ? ""
-                  : "Metal content not recognised; add it below."}
+                  : result.details.composition
+                    ? `No precious metal: ${String(result.details.composition).replace(/^./, (c) => c.toLowerCase())}.`
+                    : "Metal content not recognised; add it below."}
           </p>
           {applied ? (
             <p className="success qs-applied">Filled in below. Add what you paid, check it, and save.</p>

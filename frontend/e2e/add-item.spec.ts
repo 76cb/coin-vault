@@ -11,7 +11,7 @@ test("add an item by hand, then add photos and set a cover", async ({ page }) =>
   await page.getByLabel("Year").fill("1881");
   await page.getByLabel("Mint mark").fill("S");
   await page.getByRole("button", { name: "Add metal" }).click();
-  await page.getByLabel("Gross weight (g)").fill("26.73");
+  await page.getByLabel("Gross weight", { exact: true }).fill("26.73");
   await page.getByLabel("Fineness").fill("0.9");
   await expect(page.getByText("≈ 0.7735 ozt pure")).toBeVisible();
   await page.getByRole("radio", { name: "Slabbed" }).click();
@@ -63,4 +63,35 @@ test("editing keeps fields and records value changes in history", async ({ page 
   const change = page.locator(".audit tbody tr", { hasText: "purchase price" }).first(); // newest first
   await expect(change).toContainText("38");
   await expect(change).toContainText("42");
+});
+
+test("gross weight in troy ounces, a platinum Lunar by face value, and a cent's composition", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/items/new");
+  // NGC's way of writing it: the reference is the 1/10 oz platinum Lunar, from the $15 face value
+  await page.locator("#qs-text").fill("2026P Australia Pt $15 Year of the Horse NGC MS70");
+  await expect(page.locator(".qs-metal")).toContainText("Australian Lunar Series III Platinum 1/10 oz");
+  await page.locator("#qs-text").fill("2027P Australia G$5 Year of the Goat NGC MS 69");
+  await expect(page.locator(".qs-metal")).toContainText("Perth Lunar III gold 1/20 oz");
+  await page.locator("#qs-text").fill("2025 D Lincoln Cent");
+  await expect(page.locator(".qs-metal")).toContainText("No precious metal: copper-plated zinc");
+
+  // typed by hand, in troy ounces
+  const title = unique("Platinum round");
+  await page.goto("/items/new");
+  await page.getByLabel("Title", { exact: true }).fill(title);
+  await page.getByRole("button", { name: "Add metal" }).click();
+  const row = page.locator(".metal-row").last();
+  await row.getByLabel("Metal").selectOption("Pt");
+  await row.getByLabel("Gross weight unit").selectOption("ozt");
+  await row.getByLabel("Gross weight", { exact: true }).fill("1/10");
+  await row.getByLabel("Fineness").fill("0.9995");
+  await expect(row.locator(".metal-preview")).toContainText("3.11 g, ≈ 0.1000 ozt pure");
+  // switching the unit converts what's typed, so the metal stays the same
+  await row.getByLabel("Gross weight unit").selectOption("g");
+  await expect(row.getByLabel("Gross weight", { exact: true })).toHaveValue("3.110348");
+  await row.getByLabel("Gross weight unit").selectOption("ozt");
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await expect(page.locator("table.figures").first()).toContainText("3.110348 g");
 });

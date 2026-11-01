@@ -152,3 +152,24 @@ def test_bare_quarter_still_finds_its_silver(api):
     assert body["details"]["country"] == "United States"
     m = api.get("/api/v1/compositions/match", params={k: v for k, v in body["details"].items() if k in ("country", "denomination", "year", "series")}).json()
     assert m[0]["key"] == "us-quarter-90"
+
+
+@pytest.mark.parametrize("text, metal, label", [
+    ("2027P Australia G$5 Year of the Goat NGC MS 69", "Au", "Perth Lunar III gold 1/20 oz"),
+    ("2026P Australia Pt $15 Year of the Horse NGC MS70", "Pt", "Australian Lunar Series III Platinum 1/10 oz (.9995)"),
+    ("2026 Australia 1 oz Platinum Lunar Horse BU", "Pt", "Australian Lunar Series III Platinum 1 oz (.9995)"),
+    ("2026 Australia Year of the Horse 1/2 oz silver", "Ag", "Australian Lunar Series III Silver 1/2 oz (.9999)"),
+    ("2021 Australia Kangaroo $15 gold", "Au", "Gold Kangaroo (Nugget) 1/10 oz"),
+])
+def test_lunar_and_ngc_metal_prefix_find_the_right_size(api, text, metal, label):
+    d = api.post("/api/v1/items/describe", json={"text": text}).json()
+    assert d["item_type"] == "bullion" and d["metal"] == metal and d["details"]["country"] == "Australia"
+    assert d["compositions"] and d["compositions"][0]["label"] == label, [c["label"] for c in d["compositions"]]
+
+
+def test_metal_symbols_and_ngc_prefixes():
+    assert describe("1 oz 9999 Ag round").metal == "Ag"
+    assert describe("2024 Canada S$5 Maple Leaf").metal == "Ag"
+    assert describe("1881-S Morgan $1 AU58").metal is None  # AU is a grade, not gold
+    d = describe("2027P Australia G$5 Year of the Goat NGC MS 69")
+    assert d.details["denomination"] == "$5" and d.details["mint_mark"] == "P" and d.condition["grade_text"] == "MS69"

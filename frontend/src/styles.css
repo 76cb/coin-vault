@@ -968,3 +968,15 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
 .pcgs-number p { margin: 0 0 0.6rem; max-width: 70ch; }
 .pcgs-number-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem 1rem; margin-bottom: 0.6rem; }
 .pcgs-number-row label { margin: 0; width: 10rem; }
+.gross-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.gross-field > label { margin: 0; }
+.gross-inputs { display: flex; gap: 0.35rem; }
+.gross-inputs input { flex: 1 1 auto; min-width: 0; }
+.gross-inputs select { flex: 0 0 auto; width: auto; }
+@media (max-width: 640px) {
+  .metal-row { grid-template-columns: 1fr 1fr; }
+  .metal-row .gross-field { grid-column: 2 / -1; }
+}
+@media (max-width: 420px) {
+  .metal-row .gross-field { grid-column: 1 / -1; }
+}

@@ -14,6 +14,8 @@ from app.db import get_db
 from app.deps import Principal, read_items
 from app.models import Composition
 from app.routers.compositions import CompositionMatchOut, _out, _visible, match
+from app.services import base_metals
+from app.services.coin_words import denom_key
 from app.services.describe import LINE_WORDS, Described, describe
 
 router = APIRouter(tags=["items"])
@@ -72,17 +74,22 @@ def _bar_matches(db: Session, principal: Principal, metal: str | None, refiner: 
 
 
 def _bullion_matches(db: Session, principal: Principal, line: str, country: str | None, metal: str | None,
-                     size_toz: Decimal | None, year: int | None) -> list[CompositionMatchOut]:
-    """Reference rows of a bullion line in the size the text gives (1 oz when it gives none)."""
+                     size_toz: Decimal | None, year: int | None, denomination: str | None = None) -> list[CompositionMatchOut]:
+    """Reference rows of a bullion line in the size the text gives; with no size, the one with the face value it
+    gives ("$15"); with neither, 1 oz."""
     base = re.sub(r"^(Gold|Silver|Platinum|Palladium)\s+", "", line)
     word = LINE_WORDS.get(base, base.split()[-1].lower())
+    by_face = denom_key(denomination) if size_toz is None and denomination else None
     target = size_toz or Decimal(1)
     scored: list[tuple[int, Composition]] = []
     stmt = select(Composition).where(_visible(principal), Composition.per_face_unit.is_(False), Composition.label.ilike(f"%{word}%"))
     if metal:
         stmt = stmt.where(Composition.metal == metal)
     for c in db.scalars(stmt):
-        if abs(c.pure_toz - target) > target * Decimal("0.02"):
+        if by_face:
+            if denom_key(c.denomination) != by_face:
+                continue
+        elif abs(c.pure_toz - target) > target * Decimal("0.02"):
             continue
         score = 5
         if country and c.country == country:
@@ -104,19 +111,33 @@ def describe_item(body: DescribeIn, principal: Principal = Depends(read_items), 
 def described_out(db: Session, principal: Principal, d: Described) -> DescribeOut:
     """What the title reader understood, with the reference compositions that fit it."""
     comps: list[CompositionMatchOut] = []
+    face = d.details.get("denomination") if d.item_type == "bullion" and d.size_toz is None else None
     if d.composition_key:
         c = db.scalar(select(Composition).where(_visible(principal), Composition.key == d.composition_key))
-        if c is not None:
+        # the 1 oz row a bullion line defaults to, unless the title's face value says another size ("Kangaroo $15")
+        if c is not None and face and d.details.get("product_line") and denom_key(c.denomination) != denom_key(face):
+            comps = _bullion_matches(db, principal, d.details["product_line"], d.details.get("country"), d.metal, None,
+                                     d.details.get("year"), face)
+        if c is not None and not comps:
             comps = [CompositionMatchOut(**_out(c).model_dump(), score=100)]
     elif d.item_type == "bar":
         comps = _bar_matches(db, principal, d.metal, d.details.get("refiner"), d.details.get("weight_value"), d.details.get("weight_unit"), d.title)
     elif d.item_type == "bullion" and d.details.get("product_line"):
-        comps = _bullion_matches(db, principal, d.details["product_line"], d.details.get("country"), d.metal, d.size_toz, d.details.get("year"))
+        comps = _bullion_matches(db, principal, d.details["product_line"], d.details.get("country"), d.metal, d.size_toz,
+                                 d.details.get("year"), d.details.get("denomination"))
     elif d.item_type == "coin" and (d.details.get("denomination") or d.details.get("series")):
         comps = match(
             country=d.details.get("country"), denomination=d.details.get("denomination"), year=d.details.get("year"),
             mint_mark=d.details.get("mint_mark"), series=d.title, principal=principal, db=db,
         )
+    if d.item_type == "coin" and not comps and d.metal is None:
+        hit = base_metals.lookup(d.details.get("country"), d.details.get("denomination"), d.details.get("year"),
+                                 d.details.get("mint_mark"), d.details.get("series"))
+        if hit is not None:
+            d.details["composition"] = hit.composition
+            if hit.weight_g is not None:
+                d.details["weight_g"] = str(hit.weight_g)
+            d.recognized.append("no precious metal")
     return DescribeOut(
         item_type=d.item_type, title=d.title, quantity=d.quantity, metal=d.metal, details=d.details,
         condition=d.condition, recognized=d.recognized, notes=d.notes, compositions=comps,

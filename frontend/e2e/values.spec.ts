@@ -203,7 +203,7 @@ test("look up a PCGS cert number", async ({ page }) => {
 
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue(`${name} PCGS MS65`);
   await expect(page.getByLabel("Cert number")).toHaveValue("12345678");
-  await expect(page.getByLabel("Gross weight (g)")).toHaveValue("26.73");
+  await expect(page.getByLabel("Gross weight", { exact: true })).toHaveValue("26.73");
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: `${name} PCGS MS65` })).toBeVisible();
   expect(priceGuideCalls).toBe(1);
@@ -243,7 +243,7 @@ test("find a coin on Numista and fill the form from it", async ({ page }) => {
 
   await expect(page.getByLabel("Country")).toHaveValue("Canada");
   await expect(page.getByLabel("Denomination")).toHaveValue("5 Cents");
-  await expect(page.getByLabel("Gross weight (g)")).toHaveValue("1.167");
+  await expect(page.getByLabel("Gross weight", { exact: true })).toHaveValue("1.167");
   await expect(page.getByLabel("Fineness")).toHaveValue("0.925");
 });
 
