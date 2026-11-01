@@ -342,6 +342,11 @@ def describe(text: str) -> Described:
         bullion = ("American Silver Eagle", "United States", "Ag")
     elif re.search(r"\bAGE\b", raw):
         bullion = ("American Gold Eagle", "United States", "Au")
+    elif (ym and int(ym.group(1)) >= 1986 and d.metal and re.search(r"\beagles?\b", low)
+          and not re.search(r"\b(?:double|half|quarter)\s*eagle\b", low) and find_country(raw) in (None, US)):
+        # "2020 Eagle G$5" (an NGC label): a modern Eagle named only by its metal is an American Eagle bullion coin
+        line = {"Au": "American Gold Eagle", "Ag": "American Silver Eagle", "Pt": "American Platinum Eagle", "Pd": "American Palladium Eagle"}
+        bullion = (line[d.metal], "United States", d.metal)
     for pat, line, country, default_metal in ([] if bullion else BULLION):
         if re.search(pat, low) and not (line == "American Gold Buffalo" and re.search(r"buffalo\s*nickel", low)):
             bullion = (line, country, default_metal)

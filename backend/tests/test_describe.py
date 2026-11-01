@@ -173,3 +173,19 @@ def test_metal_symbols_and_ngc_prefixes():
     assert describe("1881-S Morgan $1 AU58").metal is None  # AU is a grade, not gold
     d = describe("2027P Australia G$5 Year of the Goat NGC MS 69")
     assert d.details["denomination"] == "$5" and d.details["mint_mark"] == "P" and d.condition["grade_text"] == "MS69"
+
+
+@pytest.mark.parametrize("text, line, key", [
+    ("2020 Eagle G$5 NGC MS 69", "American Gold Eagle", "age-tenth"),
+    ("2020 Eagle G$50 MS70", "American Gold Eagle", "age-1oz"),
+    ("2021 Eagle S$1 Type 2 NGC MS70", "American Silver Eagle", "ase-1oz"),
+])
+def test_ngc_eagle_labels_are_american_eagles(api, text, line, key):
+    d = api.post("/api/v1/items/describe", json={"text": text}).json()
+    assert d["item_type"] == "bullion" and d["details"]["product_line"] == line
+    assert [c["key"] for c in d["compositions"]][:1] == [key]
+
+
+def test_classic_gold_eagles_stay_coins():
+    assert describe("1907 $10 Indian Head Eagle gold").item_type == "coin"
+    assert describe("1986 $5 Statue of Liberty commemorative gold").item_type == "coin"
