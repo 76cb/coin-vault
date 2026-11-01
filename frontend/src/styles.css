@@ -430,7 +430,7 @@ table.figures { border-collapse: collapse; width: 100%; font-size: var(--step--1
 .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.95rem 1.1rem; }
 .span2 { grid-column: 1 / -1; }
 @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
-.metal-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 0.6rem; align-items: end; padding-bottom: 0.85rem; margin-bottom: 0.85rem; border-bottom: 1px dashed var(--hairline-strong); }
+.metal-row { display: grid; grid-template-columns: minmax(7.5rem, 1fr) minmax(11.5rem, 1.6fr) minmax(6rem, 1fr) minmax(6rem, 1fr) auto; gap: 0.6rem; align-items: end; padding-bottom: 0.85rem; margin-bottom: 0.85rem; border-bottom: 1px dashed var(--hairline-strong); }
 .metal-ref { grid-column: 1 / -1; }
 .metal-preview { grid-column: 1 / -1; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .metal-row { grid-template-columns: 1fr 1fr; } }
@@ -968,12 +968,14 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
 .pcgs-number p { margin: 0 0 0.6rem; max-width: 70ch; }
 .pcgs-number-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem 1rem; margin-bottom: 0.6rem; }
 .pcgs-number-row label { margin: 0; width: 10rem; }
-.gross-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.gross-field { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
 .gross-field > label { margin: 0; }
-.gross-inputs { display: flex; gap: 0.35rem; }
-.gross-inputs input { flex: 1 1 auto; min-width: 0; }
-.gross-inputs select { flex: 0 0 auto; width: auto; }
-@media (max-width: 640px) {
+/* the weight and its unit read as one field: the unit sits inside the right end of the box */
+.gross-inputs { display: flex; min-width: 0; }
+.gross-inputs input { flex: 1 1 auto; min-width: 4.5rem; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.gross-inputs select { flex: 0 0 auto; width: 5.6rem; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; background-color: var(--well-soft, var(--input-bg)); }
+.gross-inputs input:focus, .gross-inputs select:focus { position: relative; z-index: 1; }
+@media (max-width: 760px) {
   .metal-row { grid-template-columns: 1fr 1fr; }
   .metal-row .gross-field { grid-column: 2 / -1; }
 }
