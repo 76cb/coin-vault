@@ -54,6 +54,7 @@ export function AiIdentify({
   usedNote = "Filled in below. Check it, add what you paid, and save.",
   extra,
   intro,
+  preset,
 }: {
   photos: AiPhotoRef[];
   itemId?: number;
@@ -62,10 +63,12 @@ export function AiIdentify({
   usedNote?: string;
   extra?: (r: Identified) => ReactNode;
   intro?: ReactNode;
+  preset?: Identified | null; // an answer already fetched (Identify all on the Upload page)
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [r, setR] = useState<Identified | null>(null);
+  const [own, setR] = useState<Identified | null>(null);
+  const r = own ?? preset ?? null;
   const [applied, setApplied] = useState(false);
 
   const look = async () => {

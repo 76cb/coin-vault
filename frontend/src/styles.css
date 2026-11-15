@@ -1038,3 +1038,73 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
 .set-list td:not(:first-child), .set-list th:not(:first-child) { white-space: nowrap; }
 .flip-contains { display: block; font-size: var(--step--1); color: var(--gold); }
 .inline-form .scan-note { flex: 1 1 100%; }
+
+/* --- Collection: select mode, needs attention --- */
+.bulk-bar { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; padding: 0.7rem 0.85rem; margin-bottom: 1rem; background: var(--gold-tint); border-left: 2px solid var(--champagne); position: sticky; top: 0; z-index: 5; }
+.bulk-bar select, .bulk-bar input { width: auto; min-width: 8rem; }
+.bulk-count { display: flex; gap: 0.6rem; align-items: baseline; }
+.bulk-tags { display: flex; gap: 0.35rem; align-items: center; }
+.flip-grid.picking > li { position: relative; }
+.flip-grid.picking > li.picked .flip-card { outline: 2px solid var(--champagne); outline-offset: 2px; }
+.pick-box { position: absolute; top: 0.4rem; left: 0.4rem; z-index: 2; background: var(--surface); border-radius: 4px; padding: 0.2rem; line-height: 0; }
+.pick-box input { width: 1.15rem; height: 1.15rem; min-height: 0; }
+.flip-gaps { display: block; font-size: var(--step--1); color: var(--bad); }
+.camera-button { display: none; margin-top: 0.5rem; }
+@media (pointer: coarse) { .camera-button { display: inline-flex; } }
+.camera-button.disabled { opacity: 0.6; pointer-events: none; }
+
+/* --- Tools: hub, checklists, want list, sales, alerts, inventory check, labels, import --- */
+.tool-grid { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.85rem; }
+.tool-card { display: flex; flex-direction: column; gap: 0.3rem; height: 100%; padding: 1rem 1.1rem; background: var(--surface); border: 1px solid var(--hairline); border-top: 2px solid var(--accent-line); border-radius: var(--r); text-decoration: none; color: inherit; }
+.tool-card:hover { border-color: var(--champagne); }
+.tool-card strong { color: var(--gold); }
+.tool-card .muted { font-size: var(--step--1); }
+.readonly-bar, .alert-bar { margin: 0; padding: 0.5rem 1.25rem; font-size: var(--step--1); }
+.readonly-bar { background: var(--badge-bg); color: var(--ink-2); }
+.alert-bar { background: var(--badge-warn-bg); color: var(--ink); border-bottom: 1px solid var(--warn-fill); }
+.alert-bar p { margin: 0.15rem 0; }
+.checklists { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.85rem; }
+.checklist-card { display: flex; flex-direction: column; gap: 0.45rem; padding: 1rem 1.1rem; background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--r); text-decoration: none; color: inherit; height: 100%; }
+.checklist-card:hover { border-color: var(--champagne); }
+.checklist-name { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
+.meter { display: block; height: 6px; background: var(--mark-track); border-radius: 3px; overflow: hidden; }
+.meter > span { display: block; height: 100%; background: var(--mark); }
+.checklist-group h2 { font-size: var(--step-0); margin: 1.25rem 0 0.4rem; color: var(--ink-2); }
+.checklist-entries { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 1.5rem; }
+.checklist-entries li { display: grid; grid-template-columns: 1.2rem minmax(0, 1fr); gap: 0 0.4rem; padding: 0.4rem 0; border-bottom: 1px solid var(--hairline); font-size: var(--step--1); }
+.checklist-entries .tick { color: var(--good); font-weight: 700; }
+.checklist-entries li.missing .entry-label { color: var(--ink-2); }
+.checklist-entries .entry-have { grid-column: 2; }
+.want-form { display: grid; grid-template-columns: 2fr 1fr 2fr auto; gap: 0.6rem; align-items: end; margin-bottom: 1rem; }
+@media (max-width: 760px) { .want-form { grid-template-columns: 1fr; } }
+.want-list li > span:first-child { flex: 1 1 260px; }
+.sales-years { margin-bottom: 1.5rem; }
+.sales-years tr.on td { background: var(--gold-tint); }
+.badge-fired { color: var(--warn); font-weight: 700; font-size: var(--step--1); }
+.check-list { list-style: none; padding: 0; margin: 0; }
+.check-list li { display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid var(--hairline); }
+.check-list label { flex: 1; display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0; cursor: pointer; }
+.check-list input[type="checkbox"] { width: 1.5rem; height: 1.5rem; min-height: 0; flex: none; }
+.check-list img, .check-list .no-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 4px; background: var(--well); flex: none; }
+.check-title { display: flex; flex-direction: column; }
+.check-list li.seen .check-title strong { color: var(--good); }
+.label-pick { list-style: none; padding: 0; margin: 0 0 1.25rem; display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; }
+.label-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+.label { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; background: #fff; color: #000; border: 1px solid var(--hairline-strong); border-radius: 6px; break-inside: avoid; }
+.label img { width: 96px; height: 96px; flex: none; }
+.label div { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.label strong { font-size: 1.15rem; line-height: 1.2; overflow-wrap: anywhere; }
+.label span { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .bulk-bar { position: static; } }
+.label span { font-size: 0.8rem; color: #444; }
+.import-help summary { cursor: pointer; color: var(--gold); }
+.import-pick { margin: 1rem 0; align-items: center; }
+.import-rows tr.bad td { background: var(--bad-tint); }
+.seen-button { margin-left: 0.6rem; }
+.gaps-note { margin-top: 0.4rem; }
+.cost-per-oz { display: block; }
+@media print {
+  .no-print, .readonly-bar, .alert-bar, .crumbs { display: none !important; }
+  .label-sheet { grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .label { border-color: #999; }
+}

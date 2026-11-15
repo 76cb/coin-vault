@@ -10,10 +10,14 @@ import QuickStart, { AfterSave } from "../components/QuickStart";
 export default function NewItem() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const carried = useLocation().state as { photos?: PickedPhoto[]; described?: Described } | null;
+  const carried = useLocation().state as {
+    photos?: PickedPhoto[]; described?: Described; copy?: Partial<FormState>; want?: { id: number; title: string };
+  } | null;
   // details the AI already read on the Upload page arrive filled in
   const [seed, setSeed] = useState<{ n: number; defaults: Partial<FormState>; after?: AfterSave } | null>(
-    carried?.described ? { n: 1, defaults: defaultsFromDescription(carried.described) } : null,
+    carried?.described ? { n: 1, defaults: defaultsFromDescription(carried.described) }
+      : carried?.copy ? { n: 2, defaults: carried.copy }
+      : carried?.want ? { n: 3, defaults: { title: carried.want.title } } : null,
   );
   const use = useCallback((defaults: Partial<FormState>, after?: AfterSave) => setSeed({ n: Date.now(), defaults, after }), []);
   const [photos, setPhotos] = useState<PickedPhoto[]>(carried?.photos ?? []);
@@ -31,6 +35,8 @@ export default function NewItem() {
           {ai && <AiIdentify photos={photos.map((p) => ({ sha256: p.sha256, role: p.role }))} onUse={use} />}
         </ChosenPhotos>
       )}
+      {carried?.copy && seed?.n === 2 && <p className="success">Copied from “{carried.copy.title}”. Change what's different (the date, the grade, what you paid) and save.</p>}
+      {carried?.want && <p className="success">From your want list. Saving this marks “{carried.want.title}” as found.</p>}
       {carried?.described && seed?.n === 1 && <p className="success">Filled in from what the AI read on the photos. Check it, add what you paid, and save.</p>}
       <QuickStart onUse={use} />
       <p className="muted lede">
@@ -53,6 +59,12 @@ export default function NewItem() {
             } catch (err) {
               note = `Saved, but the PCGS price guide value wasn't: ${(err as Error).message}`;
             }
+          }
+          if (carried?.want) {
+            try {
+              await api.updateWant(carried.want.id, { found_item_id: item.id });
+              await qc.invalidateQueries({ queryKey: ["wants"] });
+            } catch { /* the item is saved; the want list can be ticked by hand */ }
           }
           await qc.invalidateQueries({ queryKey: ["items"] });
           await qc.invalidateQueries({ queryKey: ["tags"] });

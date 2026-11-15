@@ -348,6 +348,19 @@ export function defaultsFromDescription(d: Described): Partial<FormState> {
   };
 }
 
+/** Starting values for a new item like this one: its details, grade and metal, but nothing that belongs to the one
+ *  piece (cert and serial numbers, what was paid, when, sale, photos). */
+export function copyOf(item: Item): Partial<FormState> {
+  const f = fromItem(item);
+  const details = { ...f.details };
+  for (const k of ["serial_number", "numista_issue_id"]) delete details[k];
+  return {
+    item_type: f.item_type, title: f.title, quantity: "1", details, grading: f.grading, sheldon_grade: f.sheldon_grade, grade_text: f.grade_text,
+    grading_service: f.grading_service, designations: f.designations, details_reason: f.details_reason, cert_number: "",
+    metals: f.metals, coins: f.coins, location_id: f.location_id, tags: f.tags, valuation_rule: f.valuation_rule,
+  };
+}
+
 /** The item to save straight from what a scan or title read, with every detail and its metal: no form in between. */
 export function payloadFromDescription(d: Described, title: string): Record<string, unknown> {
   return toPayload(fromItem(undefined, { ...defaultsFromDescription(d), title }));
@@ -560,7 +573,7 @@ export default function ItemForm({
     const quartersOnly = /\bquarters?\b/.test(words) && !/\bdollars?\b|\bdime\b|\bcent\b|\bnickel\b/.test(words);
     try {
       const found = await api.mintSetContents(year, kind, quartersOnly);
-      if (!found) return setSetNote("That set isn't in the built-in list (US proof and silver proof sets, 1936 to 2025). Add its coins by hand.");
+      if (!found) return setSetNote("That set isn't in the built-in list (US proof sets 1936 to 2025, silver proof sets from 1992, uncirculated sets from 1999). Add its coins by hand.");
       setF((p) => ({
         ...p,
         coins: found.coins.map(coinRow),

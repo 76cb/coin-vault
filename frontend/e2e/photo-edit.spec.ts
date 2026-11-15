@@ -9,7 +9,7 @@ test("crop, turn and brighten a photo, then reset it", async ({ page }) => {
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("0007_obv.jpg")]);
+  await page.locator(".photo-manager .dropzone input[type=file]").setInputFiles([fixture("0007_obv.jpg")]);
   const row = page.locator(".photo-list li").first();
   await expect(row).toContainText("1300×1300");
 
@@ -52,7 +52,7 @@ test("cut a coin out as a circle", async ({ page }) => {
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("0007_rev.jpg")]);
+  await page.locator(".photo-manager .dropzone input[type=file]").setInputFiles([fixture("0007_rev.jpg")]);
   const row = page.locator(".photo-list li").first();
   await expect(row).toContainText("1300×1300");
 
@@ -81,7 +81,7 @@ test("find a slab and square it up, then adjust a corner", async ({ page }) => {
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("slab.jpg")]);
+  await page.locator(".photo-manager .dropzone input[type=file]").setInputFiles([fixture("slab.jpg")]);
   const row = page.locator(".photo-list li").first();
   await expect(row).toContainText("1200×900");
 

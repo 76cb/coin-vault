@@ -71,7 +71,7 @@ test("identify an item from its photos, fill the blanks, and suggest a grade", a
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  await page.locator(".photo-manager input[type=file]").setInputFiles([own("0007_obv.jpg", title), own("0007_rev.jpg", title)]);
+  await page.locator(".photo-manager .dropzone input[type=file]").setInputFiles([own("0007_obv.jpg", title), own("0007_rev.jpg", title)]);
   await expect(page.locator(".photo-list li")).toHaveCount(2);
 
   let asked: { photos: { sha256: string; role: string }[]; item_id: number } | null = null;
