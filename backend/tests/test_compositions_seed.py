@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from app.compositions_seed import (
-    CATALOGUE_DIR, CATALOGUE_V4, CATALOGUE_V5, CATALOGUE_V6, ROWS, ROWS_V1, ROWS_V2, ROWS_V3, ROWS_V4, ROWS_V5, ROWS_V6, _bar, _catalogue_row, _product,
+    CATALOGUE_DIR, CATALOGUE_V4, CATALOGUE_V5, CATALOGUE_V6, ROWS, ROWS_V1, ROWS_V2, ROWS_V3, ROWS_V4, ROWS_V5, ROWS_V6, ROWS_V7, _bar, _catalogue_row, _product,
 )
 
 
@@ -21,11 +21,11 @@ def test_seed_rows_are_consistent():
     keys = [r["key"] for r in ROWS]
     assert len(keys) == len(set(keys)), "duplicate keys"
     assert ROWS[: len(ROWS_V1)] == ROWS_V1
-    assert ROWS == ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6
+    assert ROWS == ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6 + ROWS_V7
     # every catalogue file is loaded by exactly one migration
     files = CATALOGUE_V4 + CATALOGUE_V5 + CATALOGUE_V6
     assert sorted(files) == sorted(p.name for p in CATALOGUE_DIR.glob("*.json")) and len(files) == len(set(files))
-    for r in ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6:
+    for r in ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6 + ROWS_V7:
         assert len(r["key"]) <= 120 and len(r["label"]) <= 200
         assert r["pure_toz"] > 0, r["label"]
         assert r["fineness"] is None or Decimal(0) < r["fineness"] <= 1, r["label"]
@@ -75,3 +75,11 @@ def test_catalogue_row_math():
                              "pure_toz": "1", "source": "https://example.org", "note": ""})
     assert stated["pure_toz"] == Decimal("1.000000") and stated["gross_weight_g"] is None and stated["label"] == "Australia 1 oz"
     assert stated["key"] == "cat-australia-1-oz"
+
+
+def test_geiger_bars():
+    by = {r["key"]: r for r in ROWS_V7}
+    assert by["bar-geiger-edelmetalle-ag-100-g-999"]["pure_toz"] == Decimal("3.211860")  # 100 g x .999
+    assert by["bar-geiger-edelmetalle-au-1-oz-9999"]["pure_toz"] == Decimal("0.999900")
+    assert by["bar-geiger-edelmetalle-ag-5-kg-999"]["label"] == "Geiger Edelmetalle silver bar, 5 kg (.999)"
+    assert all("geiger-edelmetalle.de" in r["citation"] for r in ROWS_V7)

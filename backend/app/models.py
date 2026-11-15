@@ -37,7 +37,8 @@ MONEY = Numeric(14, 4)
 WEIGHT = Numeric(14, 6)
 FINENESS = Numeric(6, 5)
 
-ITEM_TYPES = ("coin", "bullion", "bar", "banknote", "goldback", "lot", "other")
+ITEM_TYPES = ("coin", "bullion", "set", "bar", "banknote", "goldback", "lot", "other")
+SET_KINDS = ("proof", "silver_proof", "uncirculated", "special", "other")
 ITEM_STATUSES = ("owned", "for_sale", "sold")
 COST_STATUSES = ("known", "estimated", "unknown")
 VALUATION_RULES = ("max", "melt", "market", "cost")
@@ -204,6 +205,8 @@ class Item(Base):
     goldback: Mapped[GoldbackDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
     lot: Mapped[LotDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
     other: Mapped[OtherDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
+    set: Mapped[SetDetails | None] = relationship(cascade="all, delete-orphan", uselist=False)
+    set_coins: Mapped[list[SetCoin]] = relationship(cascade="all, delete-orphan", order_by="(SetCoin.seq, SetCoin.id)")
     metal_content: Mapped[list[ItemMetalContent]] = relationship(
         cascade="all, delete-orphan", order_by="ItemMetalContent.id"
     )
@@ -286,6 +289,40 @@ class LotDetails(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
     face_value: Mapped[Decimal | None] = mapped_column(MONEY)
     face_currency: Mapped[str] = mapped_column(String(3), default="USD")
+    composition_id: Mapped[int | None] = mapped_column(ForeignKey("compositions.id", ondelete="SET NULL"))
+
+
+class SetDetails(Base):
+    """A mint, proof or other packaged set: one item, with the coins inside it listed in set_coins."""
+
+    __tablename__ = "set_details"
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
+    country: Mapped[str | None] = mapped_column(String(80))
+    year: Mapped[int | None] = mapped_column(Integer)
+    mint_mark: Mapped[str | None] = mapped_column(String(10))
+    set_kind: Mapped[str | None] = mapped_column(String(16))  # one of SET_KINDS
+    name: Mapped[str | None] = mapped_column(String(160))  # as on the box: "50 State Quarters Silver Proof Set"
+
+
+class SetCoin(Base):
+    """One coin (or several alike) inside a set. The set's metal content is the sum of these rows."""
+
+    __tablename__ = "set_coins"
+    __table_args__ = (CheckConstraint("quantity >= 1", name="quantity_positive"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), index=True)
+    seq: Mapped[int] = mapped_column(Integer, default=0)
+    label: Mapped[str] = mapped_column(String(200))  # "2008-S Oklahoma quarter"
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    denomination: Mapped[str | None] = mapped_column(String(80))
+    year: Mapped[int | None] = mapped_column(Integer)
+    mint_mark: Mapped[str | None] = mapped_column(String(10))
+    series: Mapped[str | None] = mapped_column(String(120))
+    composition: Mapped[str | None] = mapped_column(String(160))  # in words; all there is for a coin with no precious metal
+    weight_g: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))  # one coin's own weight
+    metal: Mapped[str | None] = mapped_column(String(2))  # None: no precious metal
+    fineness: Mapped[Decimal | None] = mapped_column(FINENESS)
+    pure_toz: Mapped[Decimal | None] = mapped_column(WEIGHT)  # per coin
     composition_id: Mapped[int | None] = mapped_column(ForeignKey("compositions.id", ondelete="SET NULL"))
 
 

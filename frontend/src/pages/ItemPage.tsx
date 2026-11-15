@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { api, Item, ITEM_TYPE_LABELS, Metal, METAL_LABELS, money, ozt, ROLE_LABELS, RULE_LABELS, STATUS_LABELS } from "../api";
+import { api, Item, ITEM_TYPE_LABELS, Metal, METAL_LABELS, money, ozt, ROLE_LABELS, RULE_LABELS, SET_KIND_LABELS, SetCoin, STATUS_LABELS } from "../api";
 import { AiGradeGuess, AiIdentify, useAiReady } from "../components/Ai";
 import Documents from "../components/Documents";
 import ItemForm, { fillBlanks, FormState } from "../components/ItemForm";
@@ -11,6 +11,8 @@ import PhotoManager from "../components/PhotoManager";
 
 const DETAIL_LABELS: Record<string, string> = {
   country: "Country",
+  name: "Set name",
+  set_kind: "Kind of set",
   denomination: "Denomination",
   year: "Year",
   mint_mark: "Mint mark",
@@ -61,7 +63,10 @@ export default function ItemPage() {
   if (item.isError) return <p className="error">{(item.error as Error).message}. <Link to="/">Back to the collection</Link></p>;
   const it = item.data;
   const shown = it.photos.find((p) => p.id === active) ?? it.photos.find((p) => p.id === it.cover_photo_id) ?? it.photos[0];
-  const details = Object.entries(it.details).filter(([k, v]) => k !== "attributes" && v !== null && v !== "" && v !== false);
+  const details = Object.entries(it.details)
+    .filter(([k, v]) => k !== "attributes" && k !== "coins" && v !== null && v !== "" && v !== false)
+    .map(([k, v]): [string, unknown] => (k === "set_kind" ? [k, SET_KIND_LABELS[String(v)] ?? v] : [k, v]));
+  const setCoins = it.item_type === "set" ? ((it.details.coins as SetCoin[] | undefined) ?? []) : [];
   const attributes = (it.details.attributes ?? {}) as Record<string, string>;
 
   const aiPhotos = it.photos.filter((p) => p.sha256).map((p) => ({ sha256: p.sha256!, role: p.role }));
@@ -156,11 +161,36 @@ export default function ItemPage() {
                 {it.location_path && <FactRow label="Stored in" value={it.location_path} />}
               </dl>
 
-              <h2>Metal</h2>
+              {it.item_type === "set" && (
+                <>
+                  <h2>Coins in this set</h2>
+                  {setCoins.length ? (
+                    <table className="figures set-list">
+                      <thead>
+                        <tr><th>Coin</th><th>Made of</th><th>Weight</th><th>Pure each</th></tr>
+                      </thead>
+                      <tbody>
+                        {setCoins.map((c, i) => (
+                          <tr key={i}>
+                            <td>{(c.quantity ?? 1) > 1 ? `${c.quantity} × ` : ""}{c.label}</td>
+                            <td>{c.metal ? `${METAL_LABELS[c.metal]}${c.fineness ? ` ${Number(c.fineness)}` : ""}` : c.composition ?? "—"}</td>
+                            <td className="tabular">{c.weight_g ? `${Number(c.weight_g)} g` : "—"}</td>
+                            <td className="tabular">{c.metal && c.pure_toz ? ozt(c.pure_toz) : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="muted">No coins listed. Edit the item to add them, so each can be found by search and its metal counted.</p>
+                  )}
+                </>
+              )}
+
+              <h2>{it.item_type === "set" ? "Metal in the whole set" : "Metal"}</h2>
               {it.metal_content.length ? (
                 <table className="figures">
                   <thead>
-                    <tr><th>Metal</th><th>Gross</th><th>Fineness</th><th>Pure per piece</th></tr>
+                    <tr><th>Metal</th><th>Gross</th><th>Fineness</th><th>{it.item_type === "set" ? "Pure per set" : "Pure per piece"}</th></tr>
                   </thead>
                   <tbody>
                     {it.metal_content.map((m, i) => (

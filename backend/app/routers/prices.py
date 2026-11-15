@@ -27,6 +27,7 @@ METAL_LABELS = {"Au": "Gold", "Ag": "Silver", "Pt": "Platinum", "Pd": "Palladium
 TYPE_LABELS = {
     "coin": "Coins",
     "bullion": "Bullion coins and rounds",
+    "set": "Mint and proof sets",
     "bar": "Bars",
     "banknote": "Banknotes",
     "goldback": "Goldbacks",

@@ -77,7 +77,7 @@ export default function QuickStart({ onUse }: { onUse: (defaults: Partial<FormSt
               ? `Metal: ${best.label}, ${Number(best.pure_toz).toLocaleString(undefined, { maximumFractionDigits: 4 })} oz pure.`
               : tied.length > 1
                 ? `Metal: could be ${tied.map((c) => c.label).join(" or ")}; pick one below.`
-                : result.item_type === "banknote" || result.item_type === "other"
+                : result.item_type === "banknote" || result.item_type === "other" || result.item_type === "set"
                   ? ""
                   : result.details.composition
                     ? `No precious metal: ${String(result.details.composition).replace(/^./, (c) => c.toLowerCase())}.`

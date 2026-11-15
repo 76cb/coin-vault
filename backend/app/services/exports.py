@@ -17,7 +17,7 @@ from app.services.items import _grade_label, cost_basis, photo_urls
 
 ZERO = Decimal(0)
 METAL_NAMES = {"Au": "gold", "Ag": "silver", "Pt": "platinum", "Pd": "palladium"}
-KIND_LABELS = {"coin": "Coin", "bullion": "Bullion", "bar": "Bar", "banknote": "Banknote", "goldback": "Goldback", "lot": "Junk silver lot", "other": "Other"}
+KIND_LABELS = {"coin": "Coin", "bullion": "Bullion", "set": "Mint set", "bar": "Bar", "banknote": "Banknote", "goldback": "Goldback", "lot": "Junk silver lot", "other": "Other"}
 STATUS_LABELS = {"owned": "Owned", "for_sale": "For sale", "sold": "Sold"}
 
 
@@ -34,6 +34,13 @@ def describe(item: Item) -> str:
         head = " ".join(x for x in (year, _s(c.country), _s(c.denomination)) if x)
         tail = ", ".join(x for x in (_s(c.series), _s(c.product_line)) if x and x.lower() not in head.lower())
         return ", ".join(x for x in (head, tail) if x)
+    if t == "set" and item.set:
+        st = item.set
+        date = f"{st.year}{'-' + st.mint_mark if st.mint_mark else ''}" if st.year else ""
+        head = " ".join(x for x in (date, _s(st.country), _s(st.name)) if x)
+        coins = "; ".join(f"{c.quantity} x {c.label}" if c.quantity > 1 else c.label for c in item.set_coins)
+        count = sum(c.quantity for c in item.set_coins)
+        return ": ".join(x for x in (head, f"{count} coin{'' if count == 1 else 's'}: {coins}" if coins else "") if x)
     if t == "bar" and item.bar:
         b = item.bar
         weight = f"{b.weight_value.normalize():f} {b.weight_unit}" if b.weight_value is not None else ""
@@ -124,14 +131,15 @@ def csv_row(db: Session, item: Item, paths: dict[int, str | None], spot: dict, c
     v = valuation.item_values(db, item, spot, currency=currency)
     mv = v.market_valuation
     coin, bar, note, cond = item.coin, item.bar, item.banknote, item.condition
+    dated = coin or item.set  # a set carries its own country, year and mint mark
     serial = (bar.serial_number if bar else None) or (note.serial_number if note else None)
     oz = {m: v.pure_toz_total.get(m) for m in ("Au", "Ag", "Pt", "Pd")}
     row = [
         item.id, item.title, KIND_LABELS.get(item.item_type, item.item_type), STATUS_LABELS.get(item.status, item.status),
         item.quantity, describe(item),
-        (coin.country if coin else None) or (note.country if note else None),
+        (dated.country if dated else None) or (note.country if note else None),
         (coin.denomination if coin else None) or (note.denomination if note else None),
-        coin.year if coin else None, coin.mint_mark if coin else None,
+        dated.year if dated else None, dated.mint_mark if dated else None,
         (coin.series if coin else None) or (note.series if note else None), coin.product_line if coin else None,
         _grade_label(item), cond.grading if cond else None, cond.grading_service if cond else None, cond.cert_number if cond else None,
         serial, bar.refiner if bar else None, bar.weight_value if bar else None, bar.weight_unit if bar else None,

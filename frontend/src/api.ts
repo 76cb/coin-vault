@@ -1,6 +1,6 @@
 // Thin typed client for the Coin Vault API. Session cookie + CSRF header on writes.
 
-export type ItemType = "coin" | "bullion" | "bar" | "banknote" | "goldback" | "lot" | "other";
+export type ItemType = "coin" | "bullion" | "set" | "bar" | "banknote" | "goldback" | "lot" | "other";
 export type ItemStatus = "owned" | "for_sale" | "sold";
 export type CostStatus = "known" | "estimated" | "unknown";
 export type PhotoRole = "obverse" | "reverse" | "edge" | "slab_front" | "slab_back" | "other";
@@ -9,6 +9,7 @@ export type Metal = "Au" | "Ag" | "Pt" | "Pd";
 export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
   coin: "Coin",
   bullion: "Bullion coin or round",
+  set: "Mint set (proof or uncirculated)",
   bar: "Bar",
   banknote: "Banknote",
   goldback: "Goldback",
@@ -172,7 +173,36 @@ export interface ItemListEntry {
   currency: string;
   updated_at: string;
   deleted_at: string | null;
+  coin_count?: number | null; // a set: how many coins are listed in it
+  matched_coins?: string[]; // a set found by a search: the coins in it that matched
 }
+
+/** One coin inside a mint or proof set, as the API sends and takes it. */
+export interface SetCoin {
+  label: string;
+  quantity?: number;
+  denomination?: string | null;
+  year?: number | null;
+  mint_mark?: string | null;
+  series?: string | null;
+  composition?: string | null;
+  weight_g?: string | null;
+  metal?: Metal | null;
+  fineness?: string | null;
+  pure_toz?: string | null;
+  composition_id?: number | null;
+}
+export interface MintSetContents {
+  name: string;
+  kind: string;
+  year: number;
+  mint_mark: string | null;
+  coins: SetCoin[];
+}
+export const SET_KIND_LABELS: Record<string, string> = {
+  "": "Not set", proof: "Proof set", silver_proof: "Silver proof set", uncirculated: "Uncirculated mint set",
+  special: "Special mint set", other: "Other set",
+};
 
 export interface ItemPage {
   items: ItemListEntry[];
@@ -577,7 +607,7 @@ export interface Described {
   title: string;
   quantity: number;
   metal: Metal | null;
-  details: Record<string, string | number | boolean>;
+  details: Record<string, string | number | boolean | SetCoin[]>;
   condition: {
     grading: "raw" | "slabbed";
     grading_service: string | null;
@@ -909,6 +939,8 @@ export const api = {
     request<{ count: number; types: NumistaHit[] }>("GET", `${A}/numista/search?${new URLSearchParams(year ? { q, year } : { q })}`),
   numistaType: (id: number) => request<NumistaType>("GET", `${A}/numista/types/${id}`),
   numistaEstimate: (itemId: number) => request<Valuation>("POST", `${A}/items/${itemId}/numista/estimate`),
+  mintSetContents: (year: number, kind: string, quartersOnly: boolean) =>
+    request<MintSetContents | null>("GET", `${A}/reference/mint-set?year=${year}&kind=${kind}&quarters_only=${quartersOnly}`),
   goldbackCatalogue: () => request<GoldbackCatalogue>("GET", `${A}/goldbacks/catalogue`),
   goldbackSummary: () => request<GoldbackSummary>("GET", `${A}/goldbacks/summary`),
   addGoldbacks: (body: GoldbackAdd) => request<{ item_ids: number[] }>("POST", `${A}/goldbacks`, body),

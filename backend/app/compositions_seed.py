@@ -2,7 +2,8 @@
 
 ROWS_V1 is loaded by migration 0002; ROWS_V2 (bars by refiner, more bullion coins) by migration 0004,
 ROWS_V3 (US silver proofs) by 0005, ROWS_V4 (the world catalogue, app/data/catalogue) by 0006
-ROWS_V5 (more of the catalogue) by 0007 and ROWS_V6 (Perth Mint platinum Lunar coins) by 0011.
+ROWS_V5 (more of the catalogue) by 0007, ROWS_V6 (Perth Mint platinum Lunar coins) by 0011 and ROWS_V7
+(Geiger Edelmetalle bars) by 0016.
 
 Pure weight = gross weight (g) / 31.1034768 x fineness, rounded to 6 decimals, from each mint's
 published specifications. Bullion uses the mint's stated pure content. Per-face rows give pure
@@ -315,4 +316,20 @@ ROWS_V4 = load_catalogue(CATALOGUE_V4)
 ROWS_V5 = load_catalogue(CATALOGUE_V5)
 ROWS_V6 = load_catalogue(CATALOGUE_V6)
 
-ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6
+
+# --- Version 7: Geiger Edelmetalle bars (migration 0016) -------------------------------------
+# Sizes and fineness as Geiger lists its own "Geiger original" bars; the square bars and the cast bars of
+# one size hold the same metal, so each size is one row.
+
+GEIGER = "Geiger Edelmetalle shop, geiger-edelmetalle.de/en/Online-Shop/Bars/Geiger-original and product pages (checked 2026-11-15)"
+GEIGER_LINES = [
+    ("Geiger Edelmetalle", "Ag", "0.999", ["1 g", "5 g", "10 g", "20 g", "1 oz", "50 g", "100 g", "250 g", "10 oz", "500 g", "1 kg", "100 oz", "5 kg"], GEIGER),
+    ("Geiger Edelmetalle", "Au", "0.9999", ["1 g", "2.5 g", "5 g", "10 g", "20 g", "1 oz", "50 g", "100 g", "250 g", "500 g", "1 kg"], GEIGER),
+]
+GEIGER_PRODUCTS = [
+    _product("Geiger Edelmetalle Silver Multicard 25 x 1 g", "Ag", "25", "0.999", GEIGER),
+    _product("Geiger Edelmetalle Gold Multicard 25 x 1 g", "Au", "25", "0.9999", GEIGER),
+]
+ROWS_V7 = [_bar(r, m, size, f, src) for r, m, f, sizes, src in GEIGER_LINES for size in sizes] + GEIGER_PRODUCTS
+
+ROWS = ROWS_V1 + ROWS_V2 + ROWS_V3 + ROWS_V4 + ROWS_V5 + ROWS_V6 + ROWS_V7

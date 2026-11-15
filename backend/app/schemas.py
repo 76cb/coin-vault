@@ -16,6 +16,7 @@ from app.models import (
     ITEM_TYPES,
     METALS,
     PHOTO_ROLES,
+    SET_KINDS,
     VALUATION_RULES,
     WEIGHT_UNITS,
 )
@@ -98,6 +99,43 @@ class LotDetailsIn(_Base):
     composition_id: int | None = None
 
 
+class SetCoinIn(_Base):
+    """One coin inside a set. Its pure metal is weight x fineness when both are given; otherwise the figure typed,
+    or the reference composition's."""
+
+    label: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(default=1, ge=1, le=10000)
+    denomination: str | None = Field(default=None, max_length=80)
+    year: int | None = Field(default=None, ge=-3000, le=2200)
+    mint_mark: str | None = Field(default=None, max_length=10)
+    series: str | None = Field(default=None, max_length=120)
+    composition: str | None = Field(default=None, max_length=160)
+    weight_g: Decimal | None = Field(default=None, gt=0, le=100000)
+    metal: Literal[METALS] | None = None  # type: ignore[valid-type]
+    fineness: Decimal | None = Field(default=None, gt=0, le=1)
+    pure_toz: Decimal | None = Field(default=None, ge=0)
+    composition_id: int | None = None
+
+    @field_validator("metal", "denomination", "mint_mark", "series", "composition", mode="before")
+    @classmethod
+    def _blank(cls, v):
+        return None if isinstance(v, str) and not v.strip() else v
+
+
+class SetDetailsIn(_Base):
+    country: str | None = Field(default=None, max_length=80)
+    year: int | None = Field(default=None, ge=-3000, le=2200)
+    mint_mark: str | None = Field(default=None, max_length=10)
+    set_kind: Literal[SET_KINDS] | None = None  # type: ignore[valid-type]
+    name: str | None = Field(default=None, max_length=160)
+    coins: list[SetCoinIn] = Field(default_factory=list, max_length=200)
+
+    @field_validator("set_kind", mode="before")
+    @classmethod
+    def _blank(cls, v):
+        return None if isinstance(v, str) and not v.strip() else v
+
+
 class OtherDetailsIn(_Base):
     attributes: dict[str, Any] = Field(default_factory=dict)
 
@@ -105,6 +143,7 @@ class OtherDetailsIn(_Base):
 DETAIL_MODELS: dict[str, type[_Base]] = {
     "coin": CoinDetailsIn,
     "bullion": CoinDetailsIn,
+    "set": SetDetailsIn,
     "bar": BarDetailsIn,
     "banknote": BanknoteDetailsIn,
     "goldback": GoldbackDetailsIn,
@@ -303,6 +342,8 @@ class ItemListEntry(_Base):
     current: Decimal | None = None
     currency: str = "USD"
     deleted_at: dt.datetime | None
+    coin_count: int | None = None  # a set: how many coins are listed in it
+    matched_coins: list[str] = Field(default_factory=list)  # a set found by a search: the coins in it that matched
 
 
 class ItemPage(BaseModel):

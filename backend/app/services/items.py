@@ -31,6 +31,8 @@ from app.models import (
     LotDetails,
     OtherDetails,
     Photo,
+    SetCoin,
+    SetDetails,
     Tag,
     document_links,
     utcnow,
@@ -53,9 +55,10 @@ TROY_OUNCE_G = Decimal("31.1034768")
 UNIT_GRAMS = {"g": Decimal(1), "ozt": TROY_OUNCE_G, "kg": Decimal(1000), "tola": Decimal("11.6638038")}
 PURE_QUANT = Decimal("0.000001")
 
-DETAIL_ATTR = {"coin": "coin", "bullion": "coin", "bar": "bar", "banknote": "banknote", "goldback": "goldback", "lot": "lot", "other": "other"}
+DETAIL_ATTR = {"coin": "coin", "bullion": "coin", "set": "set", "bar": "bar", "banknote": "banknote", "goldback": "goldback", "lot": "lot", "other": "other"}
 DETAIL_CLASS = {
     "coin": CoinDetails,
+    "set": SetDetails,
     "bar": BarDetails,
     "banknote": BanknoteDetails,
     "goldback": GoldbackDetails,
@@ -176,13 +179,19 @@ def _apply_details(db: Session, item: Item, details: dict[str, Any] | None, repl
     for other_attr in set(DETAIL_ATTR.values()) - {attr}:
         if getattr(item, other_attr) is not None:
             setattr(item, other_attr, None)
+    if item.item_type != "set" and item.set_coins:
+        item.set_coins.clear()
     current = getattr(item, attr)
     if details is None and current is not None and not replace:
         return
     base: dict[str, Any] = {}
     if current is not None and not replace:
         base = {c.key: getattr(current, c.key) for c in current.__table__.columns if c.key != "item_id"}
+        if item.item_type == "set":
+            base["coins"] = [_set_coin_dict(c) for c in item.set_coins]  # details sent without coins keep them
     merged = _validate_details(item.item_type, {**base, **(details or {})})
+    if item.item_type == "set":
+        _apply_set_coins(db, item, merged.pop("coins"))
     if item.item_type == "lot" and merged.get("composition_id"):
         comp = db.get(Composition, merged["composition_id"])
         if comp is None:
@@ -193,6 +202,64 @@ def _apply_details(db: Session, item: Item, details: dict[str, Any] | None, repl
     else:
         for k, v in merged.items():
             setattr(current, k, v)
+
+
+SET_COIN_FIELDS = ("label", "quantity", "denomination", "year", "mint_mark", "series", "composition", "weight_g", "metal",
+                   "fineness", "pure_toz", "composition_id")
+
+
+def _set_coin_dict(c: SetCoin) -> dict[str, Any]:
+    return {k: getattr(c, k) for k in SET_COIN_FIELDS}
+
+
+def _apply_set_coins(db: Session, item: Item, coins: list[dict[str, Any]]) -> None:
+    """Replace the set's coin list. Each coin's pure metal: weight x fineness when both are given, else the figure
+    sent, else its reference composition's."""
+    item.set_coins.clear()
+    db.flush()
+    for seq, row in enumerate(coins):
+        row = dict(row)
+        comp = None
+        if row.get("composition_id") is not None:
+            comp = db.get(Composition, row["composition_id"])
+            if comp is None or comp.per_face_unit:
+                raise HTTPException(422, f"Unknown composition for {row['label']}")
+            row["metal"] = row["metal"] or comp.metal
+            if row["weight_g"] is None and row["fineness"] is None and row["pure_toz"] is None:
+                row["weight_g"], row["fineness"], row["pure_toz"] = comp.gross_weight_g, comp.fineness, comp.pure_toz
+        if row["metal"] is None:
+            row["fineness"] = row["pure_toz"] = None  # no precious metal: nothing to count
+        elif row["weight_g"] is not None and row["fineness"] is not None:
+            row["pure_toz"] = compute_pure_toz(row["weight_g"], row["fineness"])
+        item.set_coins.append(SetCoin(seq=seq, **row))
+
+
+def fill_set_metal(db: Session, item: Item) -> None:
+    """A set's metal content is the sum of its coins', so it's worked out, not typed. A set with no coin that has
+    any metal recorded keeps whatever metal content it was given (one figure for the whole set)."""
+    if item.item_type != "set":
+        return
+    totals: dict[str, dict[str, Any]] = {}
+    for c in item.set_coins:
+        if c.metal is None or c.pure_toz is None:
+            continue
+        t = totals.setdefault(c.metal, {"gross": Decimal(0), "pure": Decimal(0), "fine": set(), "weighed": True})
+        t["pure"] += c.pure_toz * c.quantity
+        t["fine"].add(c.fineness)
+        if c.weight_g is None:
+            t["weighed"] = False
+        else:
+            t["gross"] += c.weight_g * c.quantity
+    if not totals:
+        return
+    item.metal_content.clear()
+    db.flush()
+    for metal, t in totals.items():
+        fine = next(iter(t["fine"])) if len(t["fine"]) == 1 else None
+        item.metal_content.append(ItemMetalContent(
+            metal=metal, gross_weight_g=t["gross"] if t["weighed"] else None, fineness=fine,
+            pure_toz=t["pure"].quantize(PURE_QUANT, rounding=ROUND_HALF_UP), source="computed",
+        ))
 
 
 def _apply_condition(item: Item, condition: ConditionIn | None) -> None:
@@ -213,7 +280,9 @@ def _apply_metal_content(db: Session, item: Item, rows: list[MetalContentIn]) ->
     for row in rows:
         gross = row.gross_weight_g
         fineness = row.fineness
-        if gross is None and item.item_type == "bar" and item.bar and item.bar.weight_value:
+        # a reference picked with nothing typed over it gives the figures; the bar's own weight only fills in for a
+        # row with no reference (it used to win, leaving a referenced bar with a weight but no pure metal)
+        if gross is None and row.composition_id is None and item.item_type == "bar" and item.bar and item.bar.weight_value:
             gross = item.bar.weight_value * UNIT_GRAMS[item.bar.weight_unit]
         comp = None
         if row.composition_id is not None:
@@ -381,6 +450,7 @@ def create_item(db: Session, principal: Principal, body: ItemCreate) -> Item:
     db.flush()
     fill_base_metal(item)
     fill_goldback_gold(db, item)
+    fill_set_metal(db, item)
     if body.tags:
         item.tags = resolve_tags(db, principal.owner_id, body.tags)
     db.flush()
@@ -426,6 +496,7 @@ def update_item(db: Session, principal: Principal, item: Item, body: ItemUpdate,
         db.flush()
         fill_base_metal(item)
         fill_goldback_gold(db, item)
+        fill_set_metal(db, item)
     if "tags" in data:
         item.tags = resolve_tags(db, principal.owner_id, body.tags or [])
     item.version += 1
@@ -448,7 +519,10 @@ def _details_dict(item: Item) -> dict[str, Any]:
     row = getattr(item, DETAIL_ATTR[item.item_type])
     if row is None:
         return DETAIL_MODELS[item.item_type]().model_dump()
-    return {c.key: getattr(row, c.key) for c in row.__table__.columns if c.key != "item_id"}
+    out = {c.key: getattr(row, c.key) for c in row.__table__.columns if c.key != "item_id"}
+    if item.item_type == "set":
+        out["coins"] = [_set_coin_dict(c) for c in item.set_coins]
+    return out
 
 
 def _grade_label(item: Item) -> str | None:
@@ -571,11 +645,23 @@ def item_out(db: Session, item: Item, spot: dict | None = None) -> ItemOut:
     )
 
 
+def matching_set_coins(item: Item, q: str | None) -> list[str]:
+    """The coins in a set that a search for `q` matches, as "2008-S Oklahoma quarter"."""
+    words = (q or "").strip().lower()
+    if not words or item.item_type != "set":
+        return []
+    return [c.label for c in item.set_coins
+            if any(words in (v or "").lower() for v in (c.label, c.series, c.denomination, c.composition))]
+
+
 def list_entry(
-    db: Session, item: Item, paths: dict[int, str | None], spot: dict | None = None, currency: str = "USD"
+    db: Session, item: Item, paths: dict[int, str | None], spot: dict | None = None, currency: str = "USD",
+    q: str | None = None,
 ) -> ItemListEntry:
     v = valuation.item_values(db, item, spot or {}, currency=currency)
     coin = item.coin if item.item_type in ("coin", "bullion") else None
+    if coin is None and item.item_type == "set":
+        coin = item.set  # a set's own year and country
     country = coin.country if coin else (item.banknote.country if item.banknote else None)
     return ItemListEntry(
         id=item.id,
@@ -597,6 +683,8 @@ def list_entry(
         currency=currency,
         updated_at=item.updated_at,
         deleted_at=item.deleted_at,
+        coin_count=sum(c.quantity for c in item.set_coins) if item.item_type == "set" else None,
+        matched_coins=matching_set_coins(item, q),
     )
 
 
