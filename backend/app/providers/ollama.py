@@ -20,17 +20,29 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from app.logging_setup import log
+
 from app import __version__
 
 CONNECT_SECONDS = 5.0
 LIST_SECONDS = 20.0
 CHAT_SECONDS = 240.0  # the first request loads the model into the GPU, which can take a while
+NUM_PREDICT = 1500  # an answer is a few hundred tokens; this stops one that runs on (a known failing of JSON mode)
 NUM_CTX = 8192  # room for a few photos and the answer; Ollama's default (4096) is tight with images
 KEEP_ALIVE = "30m"  # stay loaded between photos while someone is working through a batch
 
 
 class OllamaError(Exception):
     """Something the owner can act on, in plain words."""
+
+
+class OllamaAnswerError(OllamaError):
+    """The model answered, but not with usable JSON. `cut_short`: it ran out of room (too many or too large photos
+    for its memory, or an answer that ran on), which smaller photos can fix."""
+
+    def __init__(self, message: str, cut_short: bool = False):
+        super().__init__(message)
+        self.cut_short = cut_short
 
 
 @dataclass
@@ -138,6 +150,51 @@ def think_setting(c: httpx.Client, base: str, model: str) -> bool | str | None:
     return _THINK[key]
 
 
+def loads_lenient(text: str) -> dict[str, Any] | None:
+    """The JSON object in a model's answer, forgiving the usual slips: code fences or words around it, and an answer
+    cut off partway (what was complete is kept). None when there's no object to be had."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    text = text[start:]
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text)
+        return obj if isinstance(obj, dict) else None
+    except ValueError:
+        pass
+    # cut off partway: go back to the last point where a value had just been finished, and close what's open
+    stack: list[str] = []
+    in_string = escaped = False
+    safe: tuple[int, list[str]] | None = None  # (where to cut, the brackets open there)
+    for i, ch in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if not stack:
+                break
+            stack.pop()
+            safe = (i + 1, list(stack))
+        elif ch == "," and stack:
+            safe = (i, list(stack))
+    if safe is None:
+        return None
+    cut, open_ = safe
+    try:
+        obj = json.loads(text[:cut] + "".join(reversed(open_)))
+    except ValueError:
+        return None
+    return obj if isinstance(obj, dict) and obj else None
+
+
 @dataclass
 class ChatResult:
     data: dict[str, Any]
@@ -157,7 +214,7 @@ def chat_json(
         ],
         "format": schema,
         "stream": False,
-        "options": {"temperature": 0, "num_ctx": NUM_CTX},
+        "options": {"temperature": 0, "num_ctx": NUM_CTX, "num_predict": NUM_PREDICT},
         "keep_alive": KEEP_ALIVE,
     }
     think = think_setting(c, base, model)
@@ -166,14 +223,23 @@ def chat_json(
     for attempt in range(2):  # now and then an answer comes back cut short or garbled; asking again usually works
         data = _send(c, "POST", f"{base}/api/chat", "look at the photos", body)
         content = ((data.get("message") or {}).get("content") or "").strip()
-        try:
-            parsed = json.loads(content)
-        except ValueError:
-            parsed = None
-        if isinstance(parsed, dict):
+        parsed = loads_lenient(content)
+        if parsed is not None:
             break
         body["options"] = {**body["options"], "seed": 1 + attempt}  # a different draw the second time
     else:
-        raise OllamaError("The model's answer wasn't the JSON asked for, twice. Try again, or choose a different model in Settings.")
+        used = int(data.get("prompt_eval_count") or 0)
+        full = used >= NUM_CTX * 0.9
+        cut = data.get("done_reason") == "length" or full
+        if not content:
+            why = "it gave no answer at all" + (" (the photos filled its memory)" if full else "")
+        elif cut:
+            why = "its answer was cut short" + (" because the photos filled its memory" if full else " after running on too long")
+        else:
+            why = "its answer wasn't in the form asked for"
+        log.warning("ollama_bad_answer", model=model, done_reason=data.get("done_reason"), prompt_tokens=used,
+                    answer_tokens=data.get("eval_count"), images=len(images), answer_start=content[:200])
+        raise OllamaAnswerError(f"The model couldn't be read, twice: {why}. Try again, use fewer photos, or choose a different model in Settings.",
+                                cut_short=cut or not content)
     ns = 1e-9
     return ChatResult(parsed, float(data.get("total_duration") or 0) * ns, float(data.get("load_duration") or 0) * ns)

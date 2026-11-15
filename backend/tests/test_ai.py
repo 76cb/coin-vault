@@ -201,7 +201,7 @@ def test_identify_from_library_photos_and_errors(api, fake, images):
     fake.answer = "not json"
     chats = sum(1 for p, _ in fake.calls if p == "/api/chat")
     r = api.post("/api/v1/ai/identify", json={"photos": [{"sha256": sha}]})
-    assert r.status_code == 502 and "JSON" in r.json()["detail"]
+    assert r.status_code == 502 and "wasn't in the form asked for" in r.json()["detail"]
     assert sum(1 for p, _ in fake.calls if p == "/api/chat") == chats + 2  # asked twice before giving up
 
     api.put("/api/v1/ai/settings", json={"url": "http://192.168.1.80:11434", "model": "missing:1b"})
@@ -295,3 +295,45 @@ def test_a_scan_uses_the_weight_stamped_on_the_piece(api, fake, images):
     assert d["stamped"]["fineness_assumed"] is False
     assert (Decimal(d["stamped"]["gross_weight_g"]), Decimal(d["stamped"]["fineness"])) == (Decimal("31.103477"), Decimal("0.999"))
     assert "0.999 ozt silver at 0.999" in d["recognized"]
+
+
+def test_lenient_json():
+    from app.providers.ollama import loads_lenient
+
+    assert loads_lenient('{"a": 1}') == {"a": 1}
+    assert loads_lenient('```json\n{"a": 1}\n```') == {"a": 1}
+    assert loads_lenient('Here it is: {"a": {"b": [1, 2]}} hope that helps') == {"a": {"b": [1, 2]}}
+    # cut off partway: what was finished is kept
+    assert loads_lenient('{"kind": "coin", "year": 1956, "title": "1956 D Wash') == {"kind": "coin", "year": 1956}
+    assert loads_lenient('{"kind": "set", "holder": {"in_holder": false, "service": "", "label_te') == {"kind": "set", "holder": {"in_holder": False, "service": ""}}
+    assert loads_lenient('{"title": "a, b {c}", "notes": "x\\"y, z') == {"title": "a, b {c}"}
+    for bad in ("", "not json", "[1, 2]", '{"kind', "{"):
+        assert loads_lenient(bad) is None
+
+
+def test_a_cut_off_answer_is_used_and_an_empty_one_is_retried_with_smaller_photos(api, fake, images):
+    setup_ai(api)
+    _, photos = item_with_photos(api, images, seeds=(81, 82))
+    refs = [{"sha256": p["sha256"], "role": p["role"]} for p in photos]
+    whole = json.dumps({**IDENT, "title": "1956 D Washington Quarter"})
+    fake.answer = whole[: whole.index('"confidence"')]  # the model ran out of room near the end
+    d = api.post("/api/v1/ai/identify", json={"photos": refs})
+    assert d.status_code == 200 and d.json()["described"]["title"] == "1956 D Washington Quarter"
+
+    fake.answer = ""  # nothing at all: the photos filled its memory
+    chats = sum(1 for p, _ in fake.calls if p == "/api/chat")
+    r = api.post("/api/v1/ai/identify", json={"photos": refs})
+    assert r.status_code == 502 and "gave no answer at all" in r.json()["detail"]
+    sent = [b for p, b in fake.calls if p == "/api/chat"][chats:]
+    assert len(sent) == 4 and all(b["options"]["num_predict"] == 1500 for b in sent)  # twice, then twice more with smaller photos
+    from PIL import Image
+    import io
+
+    sizes = [max(Image.open(io.BytesIO(base64.b64decode(b["messages"][1]["images"][0]))).size) for b in sent]
+    assert sizes[0] == sizes[1] and sizes[2] == sizes[3] == 896 and sizes[0] > 896
+
+
+def test_photos_are_smaller_when_several_go_together():
+    from app.services.ai import photo_edge
+
+    assert [photo_edge(n) for n in (1, 2, 3, 4)] == [1536, 1536, 1280, 1024]
