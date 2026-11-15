@@ -84,7 +84,15 @@ def poll(
     own_client = client is None
     client = client or http_client()
     try:
-        return [_poll_one(db, cur, client, now, is_open, force) for cur in (currencies or poll_currencies(db))]
+        outcomes = [_poll_one(db, cur, client, now, is_open, force) for cur in (currencies or poll_currencies(db))]
+        from app.services import alerts
+
+        for o in outcomes:
+            try:
+                alerts.check(db, o.currency, spot_map(db, o.currency), now)
+            except Exception:  # an alert must never break price fetching
+                db.rollback()
+        return outcomes
     finally:
         if own_client:
             client.close()

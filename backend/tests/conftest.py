@@ -52,6 +52,8 @@ def configured(tmp_root):
 
 
 TABLES = [
+    "spot_alerts",
+    "want_items",
     "valuations",
     "spot_prices",
     "provider_configs",

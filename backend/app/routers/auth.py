@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
-from app.deps import Principal, current_principal, require_session
+from app.deps import VIEWER_SCOPES, Principal, current_principal, require_owner_session, require_session
 from app.logging_setup import log
 from app.models import ApiToken, User, UserSession, utcnow
 from app.security import (
@@ -81,6 +81,7 @@ class MeOut(BaseModel):
     auth: str
     csrf_token: str | None = None
     scopes: list[str]
+    read_only: bool = False
 
 
 class PasswordChangeIn(BaseModel):
@@ -170,7 +171,9 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
         path="/",
     )
     log.info("login_ok", user_id=user.id, ip=ip)
-    return MeOut(user=_user_out(user), auth="session", csrf_token=sess.csrf_token, scopes=list(SCOPES))
+    read_only = user.viewer_of is not None
+    return MeOut(user=_user_out(user), auth="session", csrf_token=sess.csrf_token,
+                 scopes=list(VIEWER_SCOPES if read_only else SCOPES), read_only=read_only)
 
 
 @router.post("/logout", status_code=204)
@@ -189,6 +192,7 @@ def me(principal: Principal = Depends(current_principal)) -> MeOut:
         auth=principal.kind,
         csrf_token=principal.session.csrf_token if principal.session else None,
         scopes=sorted(principal.scopes),
+        read_only=principal.read_only,
     )
 
 
@@ -235,4 +239,57 @@ def revoke_token(token_id: int, principal: Principal = Depends(require_session),
     if tok.revoked_at is None:
         tok.revoked_at = utcnow()
         db.commit()
+    return Response(status_code=204)
+
+
+# --- Read-only logins ----------------------------------------------------------------------------
+
+
+class ViewerIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
+    password: str = Field(max_length=1024)
+
+    @field_validator("password")
+    @classmethod
+    def _long_enough(cls, v: str) -> str:
+        if len(v) < MIN_PASSWORD_LENGTH:
+            raise ValueError(f"must be at least {MIN_PASSWORD_LENGTH} characters")
+        return v
+
+
+class ViewerOut(BaseModel):
+    id: int
+    username: str
+    created_at: dt.datetime
+    last_login_at: dt.datetime | None
+
+
+@router.get("/viewers", response_model=list[ViewerOut])
+def list_viewers(principal: Principal = Depends(require_owner_session), db: Session = Depends(get_db)):
+    rows = db.scalars(select(User).where(User.viewer_of == principal.user.id).order_by(User.username))
+    return [ViewerOut.model_validate(u, from_attributes=True) for u in rows]
+
+
+@router.post("/viewers", response_model=ViewerOut, status_code=201)
+def create_viewer(body: ViewerIn, principal: Principal = Depends(require_owner_session), db: Session = Depends(get_db)):
+    """A login that can look at this collection (items, values, reports, exports) and change nothing."""
+    if db.scalar(select(User).where(User.username == body.username)) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "That username is taken")
+    u = User(username=body.username, password_hash=hash_password(body.password), is_admin=False, is_active=True,
+             base_currency=principal.user.base_currency, viewer_of=principal.user.id)
+    db.add(u)
+    db.commit()
+    log.info("viewer_created", user_id=principal.user.id, viewer_id=u.id)
+    return ViewerOut.model_validate(u, from_attributes=True)
+
+
+@router.delete("/viewers/{viewer_id}", status_code=204)
+def delete_viewer(viewer_id: int, principal: Principal = Depends(require_owner_session), db: Session = Depends(get_db)):
+    u = db.get(User, viewer_id)
+    if u is None or u.viewer_of != principal.user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such login")
+    db.execute(delete(UserSession).where(UserSession.user_id == u.id))
+    db.execute(delete(ApiToken).where(ApiToken.user_id == u.id))
+    db.delete(u)
+    db.commit()
     return Response(status_code=204)

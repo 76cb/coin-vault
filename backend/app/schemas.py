@@ -235,6 +235,22 @@ class ItemUpdate(_ItemFields):
     item_type: ItemType | None = None
 
 
+class BulkEdit(_Base):
+    """One change to many items. Only the fields sent are changed."""
+
+    ids: list[int] = Field(min_length=1, max_length=500)
+    location_id: int | None = None  # send it (a number, or null for "no location") to move the items
+    add_tags: list[str] = Field(default_factory=list)
+    remove_tags: list[str] = Field(default_factory=list)
+    status: Literal["owned", "for_sale"] | None = None
+    verified: bool | None = None  # true: seen today; false: clear the date
+    delete: bool = False
+
+
+class BulkResult(BaseModel):
+    changed: int
+
+
 class SaleIn(_Base):
     sale_date: dt.date
     sale_price: Decimal = Field(ge=0)
@@ -281,6 +297,7 @@ class ItemValuesOut(_Base):
     cost: Decimal | None
     current: Decimal | None
     gain: Decimal | None
+    premium: Decimal | None = None  # paid above today's melt value
     rule: str
     rule_applied: str
     pure_toz_total: dict[str, Decimal]
@@ -320,6 +337,8 @@ class ItemOut(_Base):
     created_at: dt.datetime
     updated_at: dt.datetime
     deleted_at: dt.datetime | None
+    verified_at: dt.datetime | None = None  # last seen in an inventory check
+    gaps: list[str] = Field(default_factory=list)  # what's missing: metal, cost, photos, value
 
 
 class ItemListEntry(_Base):
@@ -342,6 +361,9 @@ class ItemListEntry(_Base):
     current: Decimal | None = None
     currency: str = "USD"
     deleted_at: dt.datetime | None
+    gain: Decimal | None = None
+    verified_at: dt.datetime | None = None
+    gaps: list[str] = Field(default_factory=list)  # what's missing: metal, cost, photos, value
     coin_count: int | None = None  # a set: how many coins are listed in it
     matched_coins: list[str] = Field(default_factory=list)  # a set found by a search: the coins in it that matched
 

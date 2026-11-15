@@ -16,10 +16,11 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import Principal, read_items
 from app.models import Item, Location, utcnow
-from app.routers.items import ITEM_LOAD, SORTS, ItemFilters, filtered_items, item_filters
+from app.routers.items import ITEM_LOAD, SORTS, ItemFilters, filtered_items, has_gap, item_filters
 from app.services import exports
 from app.services import items as item_svc
 from app.services import spot as spot_svc
+from app.services import valuation
 
 router = APIRouter(tags=["exports"])
 
@@ -41,12 +42,14 @@ def export_csv(
     principal: Principal = Depends(read_items),
     db: Session = Depends(get_db),
     f: ItemFilters = Depends(item_filters),
-    sort: Literal["updated", "created", "title", "acquired", "year"] = "title",
+    sort: str = "title",
 ):
     """Every item matching the Collection page's filters, one row each, with its values today."""
-    items = db.scalars(filtered_items(principal.owner_id, f).order_by(SORTS[sort], Item.id).options(*ITEM_LOAD)).unique().all()
+    items = db.scalars(filtered_items(principal.owner_id, f).order_by(SORTS.get(sort, SORTS["updated"]), Item.id).options(*ITEM_LOAD)).unique().all()
     currency = principal.user.base_currency
     spot = spot_svc.spot_map(db, currency)
+    if f.missing:  # the needs-attention filter, as on the Collection page
+        items = [it for it in items if has_gap(item_svc.gaps(it, valuation.item_values(db, it, spot, currency=currency)), f.missing)]
     paths = _paths(db, principal.owner_id)
     rows = (exports.csv_row(db, it, paths, spot, currency) for it in items)
     return StreamingResponse(

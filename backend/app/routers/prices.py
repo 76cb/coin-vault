@@ -160,6 +160,7 @@ class BucketOut(BaseModel):
     melt: Decimal
     cost: Decimal
     current: Decimal
+    cost_per_toz: Decimal | None = None  # by metal: average paid per ounce, over items of only this metal with a cost
 
 
 class TotalsOut(BaseModel):
@@ -177,6 +178,9 @@ class TotalsOut(BaseModel):
     cost_unknown_items: int
     estimated_cost_items: int
     no_value_items: int
+    premium_cost: Decimal = Decimal(0)  # paid, for the items with both a cost and a melt value
+    premium_melt: Decimal = Decimal(0)  # what those items melt for today
+    premium_items: int = 0
 
 
 class SummaryOut(BaseModel):
@@ -223,6 +227,7 @@ def portfolio_summary(principal: Principal = Depends(read_prices), db: Session =
             cost_unknown_items=p.cost_unknown_items,
             estimated_cost_items=p.estimated_cost_items,
             no_value_items=p.no_value_items,
+            premium_cost=q(p.premium_cost), premium_melt=q(p.premium_melt), premium_items=p.premium_items,
         ),
         pure_toz=p.pure_toz,
         by_metal=buckets(p.by_metal),

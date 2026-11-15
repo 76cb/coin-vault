@@ -138,7 +138,7 @@ def _stamped(d: Described, text: str) -> StampedMetal | None:
     assumed = False
     if fine is None and (d.item_type == "bar" or re.search(r"\b(rounds?|bars?|ingots?|bullion)\b", text, re.I)):
         fine, assumed = Decimal("0.9995") if d.metal in ("Pt", "Pd") else Decimal("0.999"), True
-    return StampedMetal(metal=d.metal, gross_weight_g=grams.quantize(Decimal("0.0001")), fineness=fine, fineness_assumed=assumed)
+    return StampedMetal(metal=d.metal, gross_weight_g=grams.quantize(Decimal("0.000001")), fineness=fine, fineness_assumed=assumed)
 
 
 def described_out(db: Session, principal: Principal, d: Described, stamped_text: str | None = None) -> DescribeOut:

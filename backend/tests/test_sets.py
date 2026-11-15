@@ -40,7 +40,7 @@ def test_set_contents_by_year():
     old = mint_sets.contents(1962, "proof")
     assert old.mint_mark is None and [c.label for c in old.coins][-1] == "1962 Franklin half dollar" and old.pure_toz() == {"Ag": Decimal("0.614883")}
     assert "1776-1976-S Bicentennial Washington quarter" in [c.label for c in mint_sets.contents(1976, "proof").coins]
-    for year, kind in ((1942, "proof"), (1966, "proof"), (1991, "silver_proof"), (2026, "proof"), (2008, "uncirculated")):
+    for year, kind in ((1942, "proof"), (1966, "proof"), (1991, "silver_proof"), (2026, "proof"), (1998, "uncirculated")):
         assert mint_sets.contents(year, kind) is None
 
 
