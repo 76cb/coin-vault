@@ -22,6 +22,7 @@ from app.services.coin_words import US, canonical_country, denom_key, us_denom
 from app.services.images import phash_distance
 
 MAX_PHOTOS = 4
+SMALL_EDGE = 896  # the second try when the model ran out of room
 PHOTO_EDGE = 1536  # long side sent to the model: enough to read a date or a label, small enough to stay quick
 ROLE_WORDS = {
     "obverse": "the obverse (front)", "reverse": "the reverse (back)", "edge": "the edge",
@@ -87,14 +88,20 @@ def sources(db: Session, owner_id: int, refs: list[tuple[str, str]], item_id: in
     return out[:MAX_PHOTOS]
 
 
-def jpeg_for_model(src: Source) -> bytes:
+def photo_edge(count: int) -> int:
+    """The long side to send, by how many photos go together: each photo costs the model memory by its size, and
+    four at full size don't fit alongside the question."""
+    return PHOTO_EDGE if count <= 2 else 1280 if count == 3 else 1024
+
+
+def jpeg_for_model(src: Source, edge: int = PHOTO_EDGE) -> bytes:
     with Image.open(storage.path_for(src.storage_key)) as original:
-        original.draft("RGB", (PHOTO_EDGE * 2, PHOTO_EDGE * 2))
+        original.draft("RGB", (edge * 2, edge * 2))
         if src.edits:
-            img = photo_edit.render(original, src.edits, PHOTO_EDGE)
+            img = photo_edit.render(original, src.edits, edge)
         else:
             img = ImageOps.exif_transpose(original)
-            img.thumbnail((PHOTO_EDGE, PHOTO_EDGE), Image.Resampling.LANCZOS)
+            img.thumbnail((edge, edge), Image.Resampling.LANCZOS)
     if img.mode in ("RGBA", "LA", "P"):
         img = img.convert("RGBA")
         bg = Image.new("RGB", img.size, (128, 128, 128))  # a clear cut-out sits on neutral grey
@@ -111,9 +118,15 @@ def _photo_list(srcs: list[Source]) -> str:
 
 def _ask(db: Session, system: str, prompt: str, srcs: list[Source], schema: dict) -> ollama.ChatResult:
     url, model = _settings(db)
-    images = [jpeg_for_model(s) for s in srcs]
+    edge = photo_edge(len(srcs))
     with ollama.client(ollama.CHAT_SECONDS) as c:
-        return ollama.chat_json(c, url, model, system, prompt, images, schema)
+        try:
+            return ollama.chat_json(c, url, model, system, prompt, [jpeg_for_model(s, edge) for s in srcs], schema)
+        except ollama.OllamaAnswerError as exc:
+            if not exc.cut_short:
+                raise
+            # it ran out of room: once more with smaller photos, which take less of the model's memory
+            return ollama.chat_json(c, url, model, system, prompt, [jpeg_for_model(s, SMALL_EDGE) for s in srcs], schema)
 
 
 def _s(v: Any, limit: int = 200) -> str:
