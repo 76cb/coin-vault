@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 
-import { api, Composition, CostStatus, Described, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, NumistaIssue, NumistaType, PcgsLookup, STATUS_LABELS } from "../api";
+import { api, Composition, CostStatus, Described, Item, ITEM_TYPE_LABELS, ItemStatus, ItemType, Metal, METAL_LABELS, NumistaIssue, NumistaType, PcgsLookup, SET_KIND_LABELS, SetCoin, STATUS_LABELS } from "../api";
 import ReferencePicker from "./ReferencePicker";
 
 type Str = string;
@@ -35,6 +35,53 @@ interface MetalRow {
   pure_toz: Str; // empty = computed
   composition_id: Str; // empty = none
 }
+/** One coin inside a set, as typed. Its pure metal is weight x fineness when both are there; otherwise pure_toz. */
+export interface CoinRow {
+  label: Str;
+  quantity: Str;
+  metal: Metal | "";
+  weight_g: Str;
+  fineness: Str;
+  pure_toz: Str;
+  composition: Str;
+  denomination: Str;
+  year: Str;
+  mint_mark: Str;
+  series: Str;
+}
+const BLANK_COIN: CoinRow = { label: "", quantity: "1", metal: "", weight_g: "", fineness: "", pure_toz: "", composition: "", denomination: "", year: "", mint_mark: "", series: "" };
+
+export function coinRow(c: SetCoin): CoinRow {
+  const computed = c.weight_g != null && c.fineness != null;
+  return {
+    label: c.label, quantity: String(c.quantity ?? 1), metal: c.metal ?? "", weight_g: tidy(c.weight_g), fineness: tidy(c.fineness),
+    pure_toz: computed ? "" : tidy(c.pure_toz), composition: c.composition ?? "", denomination: c.denomination ?? "",
+    year: c.year != null ? String(c.year) : "", mint_mark: c.mint_mark ?? "", series: c.series ?? "",
+  };
+}
+
+/** Pure troy ounces in one of this coin: weight x fineness, else the typed figure; 0 with no precious metal. */
+export function coinPure(c: CoinRow): number {
+  if (!c.metal) return 0;
+  const g = Number(c.weight_g), f = Number(c.fineness);
+  if (c.weight_g && c.fineness && g > 0 && f > 0) return (g / 31.1034768) * f;
+  const p = Number(c.pure_toz);
+  return c.pure_toz && p > 0 ? p : 0;
+}
+
+/** Pure ounces per set by metal, and how many coins are listed. */
+export function setTotals(coins: CoinRow[]): { count: number; pure: Partial<Record<Metal, number>> } {
+  const pure: Partial<Record<Metal, number>> = {};
+  let count = 0;
+  for (const c of coins) {
+    if (!c.label.trim()) continue;
+    const q = Math.max(1, Number(c.quantity) || 1);
+    count += q;
+    if (c.metal && coinPure(c)) pure[c.metal] = (pure[c.metal] ?? 0) + coinPure(c) * q;
+  }
+  return { count, pure };
+}
+
 export interface FormState {
   item_type: ItemType;
   title: Str;
@@ -61,6 +108,7 @@ export interface FormState {
   designations: Str;
   details_reason: Str;
   metals: MetalRow[];
+  coins: CoinRow[]; // a set's coins
   valuation_rule: Str;
 }
 
@@ -137,6 +185,13 @@ const DETAIL_FIELDS: Record<ItemType, FieldDef[]> = {
     { key: "numista_id", label: "Numista N#", type: "number", more: true },
     { key: "numista_issue_id", label: "Numista issue", type: "number", more: true },
   ],
+  set: [
+    { key: "name", label: "Set name", hint: "e.g. 50 State Quarters Silver Proof Set" },
+    { key: "year", label: "Year", type: "number" },
+    { key: "set_kind", label: "Kind of set", type: "select", options: Object.keys(SET_KIND_LABELS), optionLabels: SET_KIND_LABELS },
+    { key: "country", label: "Country" },
+    { key: "mint_mark", label: "Mint mark", more: true },
+  ],
   bar: [
     { key: "weight_value", label: "Weight", type: "number" },
     { key: "weight_unit", label: "Unit", type: "select", options: ["ozt", "g", "kg", "tola"] },
@@ -176,7 +231,7 @@ function fromItem(item?: Item, defaults?: Partial<FormState>): FormState {
   const details: Record<string, Str | boolean> = {};
   if (item) {
     for (const [k, v] of Object.entries(item.details)) {
-      if (k === "attributes") continue;
+      if (k === "attributes" || k === "coins") continue;
       details[k] = typeof v === "boolean" ? v : tidy(v);
     }
     if (item.item_type === "other") {
@@ -220,6 +275,7 @@ function fromItem(item?: Item, defaults?: Partial<FormState>): FormState {
       // a reference row shows the reference values as placeholders, not as typed values
       ...(m.source === "reference" ? { gross_weight_g: "", fineness: "" } : {}),
     })),
+    coins: ((item?.details.coins as SetCoin[] | undefined) ?? []).map(coinRow),
     valuation_rule: item?.valuation_rule ?? "max",
     ...defaults,
   };
@@ -244,13 +300,15 @@ export function fillBlanks(item: Item, add: Partial<FormState>): Partial<FormSta
     }
   }
   if (!cur.metals.length && add.metals?.length) out.metals = add.metals;
+  if (!cur.coins.length && add.coins?.length) out.coins = add.coins;
   return out;
 }
 
 /** Turn what the title reader understood into starting values for the form. */
 export function defaultsFromDescription(d: Described): Partial<FormState> {
   const details: Record<string, Str | boolean> = {};
-  for (const [k, v] of Object.entries(d.details)) details[k] = typeof v === "boolean" ? v : String(v);
+  for (const [k, v] of Object.entries(d.details)) if (k !== "coins") details[k] = typeof v === "boolean" ? v : String(v);
+  const coins = Array.isArray(d.details.coins) ? d.details.coins.map(coinRow) : [];
   const best = d.compositions[0];
   const tied = d.compositions.filter((c) => best && c.score === best.score);
   const comp = tied.length === 1 ? best : null; // several equally good: the form offers them instead
@@ -276,6 +334,7 @@ export function defaultsFromDescription(d: Described): Partial<FormState> {
     designations: (c?.designations ?? []).join(", "),
     details_reason: c?.details_reason ?? "",
     metals,
+    coins,
     notes: d.notes.join("\n"),
   };
 }
@@ -336,6 +395,17 @@ export function toPayload(f: FormState): Record<string, unknown> {
     else if (fd.key === "weight_unit") details[fd.key] = v || "ozt";
     else if (fd.key === "face_currency") details[fd.key] = (v as string)?.trim() || "USD";
     else details[fd.key] = nul(String(v ?? ""));
+  }
+  if (f.item_type === "set") {
+    details.coins = f.coins.filter((c) => c.label.trim()).map((c) => {
+      const computed = c.metal && c.weight_g.trim() && c.fineness.trim();
+      return {
+        label: c.label.trim(), quantity: Math.max(1, Number(c.quantity) || 1), metal: c.metal || null,
+        weight_g: nul(c.weight_g), fineness: c.metal ? nul(c.fineness) : null,
+        pure_toz: c.metal && !computed ? nul(c.pure_toz) : null, composition: nul(c.composition),
+        denomination: nul(c.denomination), year: c.year ? Number(c.year) : null, mint_mark: nul(c.mint_mark), series: nul(c.series),
+      };
+    });
   }
   if (f.item_type === "lot") details.composition_id = f.details.composition_id ? Number(f.details.composition_id) : null;
   if (f.item_type === "other") {
@@ -462,6 +532,31 @@ export default function ItemForm({
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v }));
   const setDetail = (k: string, v: string | boolean) => setF((p) => ({ ...p, details: { ...p.details, [k]: v } }));
+  const setCoin = (i: number, patch: Partial<CoinRow>) =>
+    setF((p) => ({ ...p, coins: p.coins.map((c, j) => (j === i ? { ...c, ...patch } : c)) }));
+  const totals = useMemo(() => setTotals(f.coins), [f.coins]);
+  const coinsCarryMetal = f.item_type === "set" && Object.keys(totals.pure).length > 0;
+  const [setNote, setSetNote] = useState<string | null>(null);
+  async function fillSetCoins() {
+    const year = Number(f.details.year);
+    const kind = String(f.details.set_kind ?? "");
+    setSetNote(null);
+    if (!year || !kind) return setSetNote("Enter the year and the kind of set first.");
+    const words = `${f.title} ${String(f.details.name ?? "")}`.toLowerCase();
+    const quartersOnly = /\bquarters?\b/.test(words) && !/\bdollars?\b|\bdime\b|\bcent\b|\bnickel\b/.test(words);
+    try {
+      const found = await api.mintSetContents(year, kind, quartersOnly);
+      if (!found) return setSetNote("That set isn't in the built-in list (US proof and silver proof sets, 1936 to 2025). Add its coins by hand.");
+      setF((p) => ({
+        ...p,
+        coins: found.coins.map(coinRow),
+        details: { ...p.details, name: String(p.details.name ?? "").trim() || found.name, mint_mark: String(p.details.mint_mark ?? "").trim() || (found.mint_mark ?? ""), country: String(p.details.country ?? "").trim() || "United States" },
+      }));
+      setSetNote(`${found.coins.length} coins filled in for the ${year} ${found.name}. Check them against the set.`);
+    } catch (err) {
+      setSetNote((err as Error).message);
+    }
+  }
   const setMetal = (i: number, patch: Partial<MetalRow>) =>
     setF((p) => ({ ...p, metals: p.metals.map((m, j) => (j === i ? { ...m, ...patch } : m)) }));
 
@@ -516,6 +611,68 @@ export default function ItemForm({
                 ))}
               </div>
             </details>
+          )}
+          {f.item_type === "set" && (
+            <div className="span2 set-coins">
+              <div className="set-coins-head">
+                <strong>Coins in this set</strong>
+                <span className="muted">
+                  {totals.count
+                    ? `${totals.count} ${totals.count === 1 ? "coin" : "coins"}` +
+                      (Object.entries(totals.pure) as [Metal, number][]).map(([m, oz]) => `, ${fmtToz(oz)} ozt ${METAL_LABELS[m].toLowerCase()}`).join("") +
+                      (Object.keys(totals.pure).length ? " per set" : ", no precious metal")
+                    : "None listed yet. Each coin you list can be found by searching the collection."}
+                </span>
+              </div>
+              {f.coins.map((c, i) => (
+                <div className="coin-row" key={i}>
+                  <label className="coin-label">
+                    Coin
+                    <input value={c.label} onChange={(e) => setCoin(i, { label: e.target.value })} placeholder="2008-S Oklahoma quarter" />
+                  </label>
+                  <label>
+                    How many
+                    <input type="number" min={1} inputMode="numeric" value={c.quantity} onChange={(e) => setCoin(i, { quantity: e.target.value })} />
+                  </label>
+                  <label>
+                    Metal
+                    <select value={c.metal} onChange={(e) => setCoin(i, { metal: e.target.value as Metal | "" })}>
+                      <option value="">No precious metal</option>
+                      {Object.entries(METAL_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Weight (g)
+                    <input inputMode="decimal" value={c.weight_g} onChange={(e) => setCoin(i, { weight_g: e.target.value })} />
+                  </label>
+                  <label>
+                    Fineness
+                    <input inputMode="decimal" list="finenesses" value={c.fineness} disabled={!c.metal} onChange={(e) => setCoin(i, { fineness: e.target.value })} />
+                  </label>
+                  <label>
+                    Pure ozt
+                    <input
+                      inputMode="decimal"
+                      value={c.metal && c.weight_g && c.fineness ? (coinPure(c) ? coinPure(c).toFixed(4) : "") : c.pure_toz}
+                      disabled={!c.metal || Boolean(c.weight_g && c.fineness)}
+                      onChange={(e) => setCoin(i, { pure_toz: e.target.value })}
+                      placeholder={c.metal ? "or weight × fineness" : ""}
+                    />
+                  </label>
+                  <button type="button" className="ghost small" aria-label={`Remove ${c.label || "this coin"}`} onClick={() => setF((p) => ({ ...p, coins: p.coins.filter((_, j) => j !== i) }))}>
+                    Remove
+                  </button>
+                  {c.composition && <span className="hint coin-note">{c.composition}</span>}
+                </div>
+              ))}
+              <div className="set-coins-actions">
+                <button type="button" className="ghost small" onClick={() => setF((p) => ({ ...p, coins: [...p.coins, { ...BLANK_COIN }] }))}>Add a coin</button>
+                <button type="button" className="ghost small" onClick={fillSetCoins}>
+                  {f.coins.length ? "Replace with this year's coins" : "Fill in this year's coins"}
+                </button>
+              </div>
+              {setNote && <p className="hint" role="status">{setNote}</p>}
+            </div>
           )}
           {f.item_type === "other" && (
             <label className="span2">
@@ -616,12 +773,18 @@ export default function ItemForm({
       </fieldset>
 
       <fieldset>
-        <legend>Metal content (per piece)</legend>
+        <legend>{f.item_type === "set" ? "Metal content (per set)" : "Metal content (per piece)"}</legend>
         {f.item_type === "goldback" ? (
           <p className="muted">
             {f.details.denomination
               ? `${(Number(f.details.denomination) / 1000).toLocaleString(undefined, { maximumFractionDigits: 6 })} troy oz of .9999 gold per note, worked out from the denomination (1/1000 oz per Goldback).`
               : "Choose the denomination above so its gold counts in your totals: 1/1000 troy oz per Goldback."}
+          </p>
+        ) : coinsCarryMetal ? (
+          <p className="muted">
+            Added up from the coins above:{" "}
+            {(Object.entries(totals.pure) as [Metal, number][]).map(([m, oz]) => `${fmtToz(oz)} ozt ${METAL_LABELS[m].toLowerCase()}`).join(", ")} per set.
+            Change a coin's weight or fineness to change it.
           </p>
         ) : (<>
         {f.metals.length === 0 && f.item_type !== "lot" && <p className="muted">Add the metal so melt value can be worked out from spot price.</p>}

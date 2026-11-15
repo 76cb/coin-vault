@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from tests.m2_helpers import FakeProviders
+from tests.m2_helpers import PERIOD_END, PERIOD_START, FakeProviders
 
 
 @pytest.fixture
@@ -124,7 +124,7 @@ def test_soldcomps_test_button_syncs_usage(api, fake):
     assert r["ok"] and "12 of 100" in r["message"]
     usage = r["provider"]["usage"]
     assert usage["used"] == 12 and usage["provider_limit"] == 100 and usage["remaining"] == 78
-    assert usage["period_start"].startswith("2026-10-14") and usage["period_end"].startswith("2026-11-14")
+    assert usage["period_start"].startswith(PERIOD_START[:10]) and usage["period_end"].startswith(PERIOD_END[:10])
     assert fake.calls == ["api.sold-comps.com/usage"]  # free endpoint only; no search spent
     hist = api.get("/api/v1/settings/providers/soldcomps/usage").json()
     assert hist["days"][0]["calls"] == 1 and hist["days"][0]["requests"] == 0

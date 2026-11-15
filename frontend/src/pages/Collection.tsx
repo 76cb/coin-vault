@@ -51,7 +51,7 @@ export default function Collection() {
       </div>
 
       <div className="filters" role="search">
-        <input type="search" aria-label="Search" placeholder="Search title, year, country, cert…" defaultValue={q} onChange={(e) => update("q", e.target.value)} />
+        <input type="search" aria-label="Search" placeholder="Search title, year, country, cert, a coin in a set…" defaultValue={q} onChange={(e) => update("q", e.target.value)} />
         <select aria-label="Type" value={params.get("type") ?? ""} onChange={(e) => update("type", e.target.value)}>
           <option value="">All types</option>
           {Object.entries(ITEM_TYPE_LABELS).map(([k, v]) => (
@@ -123,8 +123,13 @@ export default function Collection() {
               <Flip src={it.cover_thumb_url} alt={it.title} />
               <span className="flip-title">{it.title}</span>
               <span className="flip-sub">
-                {[it.grade, it.quantity > 1 ? `×${it.quantity}` : null].filter(Boolean).join("  ")}
+                {[it.grade, it.coin_count ? `${it.coin_count} coins` : null, it.quantity > 1 ? `×${it.quantity}` : null].filter(Boolean).join("  ")}
               </span>
+              {it.matched_coins && it.matched_coins.length > 0 && (
+                <span className="flip-contains">
+                  Contains {it.matched_coins.slice(0, 2).join(", ")}{it.matched_coins.length > 2 ? ` and ${it.matched_coins.length - 2} more` : ""}
+                </span>
+              )}
               <span className="flip-foot">
                 <span className="flip-values">
                   {it.current && <span className="tabular flip-value" title="Current value">{money(it.current, it.currency)}</span>}

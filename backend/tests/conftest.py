@@ -71,6 +71,8 @@ TABLES = [
     "banknote_details",
     "lot_details",
     "other_details",
+    "set_coins",
+    "set_details",
     "photos",
     "items",
     "tags",

@@ -19,6 +19,8 @@ from app.models import (
     ItemCondition,
     ItemMetalContent,
     Location,
+    SetCoin,
+    SetDetails,
     Tag,
     item_tags,
     utcnow,
@@ -44,7 +46,7 @@ SORTS = {
     "created": Item.created_at.desc(),
     "title": Item.title.asc(),
     "acquired": Item.acquired_date.desc(),
-    "year": CoinDetails.year.asc(),
+    "year": func.coalesce(CoinDetails.year, SetDetails.year).asc(),
 }
 
 
@@ -93,6 +95,7 @@ def filtered_items(owner_id: int, f: ItemFilters):
         .outerjoin(CoinDetails, CoinDetails.item_id == Item.id)
         .outerjoin(BanknoteDetails, BanknoteDetails.item_id == Item.id)
         .outerjoin(ItemCondition, ItemCondition.item_id == Item.id)
+        .outerjoin(SetDetails, SetDetails.item_id == Item.id)
         .where(Item.owner_id == owner_id)
     )
     stmt = stmt.where(Item.deleted_at.is_not(None) if f.deleted else Item.deleted_at.is_(None))
@@ -126,9 +129,16 @@ def filtered_items(owner_id: int, f: ItemFilters):
             BanknoteDetails.country.ilike(like),
             BanknoteDetails.serial_number.ilike(like),
             ItemCondition.cert_number.ilike(like),
+            SetDetails.name.ilike(like),
+            SetDetails.country.ilike(like),
+            # a set is found by any coin inside it: "Oklahoma", "Kennedy", "Presidential"
+            exists().where(SetCoin.item_id == Item.id, or_(
+                SetCoin.label.ilike(like), SetCoin.series.ilike(like), SetCoin.denomination.ilike(like),
+                SetCoin.composition.ilike(like))),
         ]
         if q.isdigit():
-            conds.append(CoinDetails.year == int(q))
+            conds += [CoinDetails.year == int(q), SetDetails.year == int(q),
+                      exists().where(SetCoin.item_id == Item.id, SetCoin.year == int(q))]
         stmt = stmt.where(or_(*conds))
     return stmt
 
@@ -142,6 +152,8 @@ ITEM_LOAD = (
     selectinload(Item.banknote),
     selectinload(Item.lot),
     selectinload(Item.other),
+    selectinload(Item.set),
+    selectinload(Item.set_coins),
     selectinload(Item.condition),
     selectinload(Item.metal_content),
 )
@@ -172,7 +184,7 @@ def list_items(
     currency = principal.user.base_currency
     spot = spot_svc.spot_map(db, currency)
     return ItemPage(
-        items=[svc.list_entry(db, it, paths, spot, currency) for it in rows], total=total, page=page, page_size=page_size
+        items=[svc.list_entry(db, it, paths, spot, currency, f.q) for it in rows], total=total, page=page, page_size=page_size
     )
 
 

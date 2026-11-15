@@ -195,13 +195,14 @@ DETAIL_KEYS = {
     "coin": ("country", "denomination", "year", "mint_mark", "series"),
     "bullion": ("country", "denomination", "year", "mint_mark"),
     "banknote": ("country", "denomination"),
+    "set": ("country", "year", "mint_mark"),
 }
 
 
 def _form_values(db: Session, principal: Principal, i: ai.Identified) -> DescribeOut:
     """What the title reader makes of the model's title, with the gaps filled from what the model read directly."""
     d = describe(ai.listing_title(i))
-    if i.kind in ("bar", "banknote", "other") and d.item_type != i.kind and not d.recognized:
+    if i.kind in ("bar", "banknote", "set", "other") and d.item_type != i.kind and not d.recognized:
         d.item_type = i.kind
         d.details = {}
     if i.kind == "bar" and d.item_type == "coin":

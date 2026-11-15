@@ -39,7 +39,7 @@ class DescribeOut(BaseModel):
     compositions: list[CompositionMatchOut]  # best first; equal scores fit equally well
 
 
-PRODUCT_WORDS = ("combibar", "fortuna", "skyline", "multidisc", "kinebar")
+PRODUCT_WORDS = ("combibar", "fortuna", "skyline", "multidisc", "multicard", "kinebar")
 
 
 def _bar_matches(db: Session, principal: Principal, metal: str | None, refiner: str | None, weight: str | None, unit: str | None, text: str = ""):
@@ -142,3 +142,22 @@ def described_out(db: Session, principal: Principal, d: Described) -> DescribeOu
         item_type=d.item_type, title=d.title, quantity=d.quantity, metal=d.metal, details=d.details,
         condition=d.condition, recognized=d.recognized, notes=d.notes, compositions=comps,
     )
+
+
+class MintSetOut(BaseModel):
+    name: str
+    kind: str
+    year: int
+    mint_mark: str | None
+    coins: list[dict]
+
+
+@router.get("/reference/mint-set", response_model=MintSetOut | None)
+def mint_set_contents(year: int, kind: str, quarters_only: bool = False, principal: Principal = Depends(read_items)):
+    """The coins in a US Mint proof set of this year and kind (null when the built-in list doesn't cover it)."""
+    from app.services import mint_sets
+
+    spec = mint_sets.contents(year, kind, quarters_only)
+    if spec is None:
+        return None
+    return MintSetOut(name=spec.name, kind=spec.kind, year=spec.year, mint_mark=spec.mint_mark, coins=[c.as_dict() for c in spec.coins])

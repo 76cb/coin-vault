@@ -1027,3 +1027,13 @@ button.danger-solid:hover:not(:disabled) { filter: brightness(1.08); border-colo
   .gb-table .gb-wide { display: none; }
   .gb-table th, .gb-table td { padding-inline: 0.3rem; }
 }
+
+/* --- Mint sets: the coins inside --- */
+.set-coins { border-top: 1px dashed var(--hairline-strong); padding-top: 0.75rem; }
+.set-coins-head { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; align-items: baseline; margin-bottom: 0.6rem; }
+.coin-row { display: grid; grid-template-columns: minmax(12rem, 3fr) 4.5rem minmax(7rem, 1.2fr) 5.5rem 5.5rem 6.5rem auto; gap: 0.5rem; align-items: end; padding-bottom: 0.6rem; margin-bottom: 0.6rem; border-bottom: 1px dashed var(--hairline-strong); }
+.coin-row .coin-note { grid-column: 1 / -1; }
+.set-coins-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+@media (max-width: 760px) { .coin-row { grid-template-columns: 1fr 1fr; } .coin-row .coin-label { grid-column: 1 / -1; } }
+.set-list td:not(:first-child), .set-list th:not(:first-child) { white-space: nowrap; }
+.flip-contains { display: block; font-size: var(--step--1); color: var(--gold); }

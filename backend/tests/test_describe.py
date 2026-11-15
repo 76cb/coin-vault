@@ -111,9 +111,10 @@ def test_users_silver_proofs(api):
     clad = api.post("/api/v1/items/describe", json={"text": "2015-S Bombay Hook NP Proof Quarter PR69 DCAM"}).json()
     assert all(not c["key"].startswith("us-silver-proof") for c in clad["compositions"])  # no "silver": copper-nickel
     s = api.post("/api/v1/items/describe", json={"text": "2008-S State Quarters Silver Proof Set- with box & certificate of authenticity"}).json()
-    assert s["compositions"][0]["key"] == "us-set-quarters-states" and s["notes"] == ["Original government packaging with certificate"]
+    # sets are their own type now, with the coins listed (tests/test_sets.py)
+    assert s["item_type"] == "set" and len(s["details"]["coins"]) == 5 and s["notes"] == ["Original government packaging with certificate"]
     full = api.post("/api/v1/items/describe", json={"text": "2012 S Silver Proof Set OGP"}).json()
-    assert full["compositions"][0]["key"] == "us-set-silver-1999"
+    assert full["item_type"] == "set" and len(full["details"]["coins"]) == 14
     bicent = api.post("/api/v1/items/describe", json={"text": "1976-S Bicentennial Silver Quarter 40% proof"}).json()
     assert bicent["compositions"][0]["key"] == "us-bicentennial-quarter-40"
     old = api.post("/api/v1/items/describe", json={"text": "1942 S Washington Silver Quarter"}).json()

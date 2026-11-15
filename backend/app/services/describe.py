@@ -53,7 +53,7 @@ LABELS = [  # (pattern, name) of holder labels; kept in notes so the title can s
 REFINERS = [
     "Valcambi", "PAMP Suisse", "PAMP", "Argor-Heraeus", "Heraeus", "Metalor", "Credit Suisse", "UBS", "Perth Mint",
     "Royal Canadian Mint", "RCM", "Royal Mint", "Engelhard", "Johnson Matthey", "Sunshine Minting", "Sunshine",
-    "Asahi", "Scottsdale", "Geiger", "Umicore", "Elemetal", "Golden State Mint", "Highland Mint", "SilverTowne",
+    "Asahi", "Scottsdale", "Geiger Edelmetalle", "Geiger", "Umicore", "Elemetal", "Golden State Mint", "Highland Mint", "SilverTowne",
 ]
 
 # US series -> denomination code used by the reference table
@@ -350,21 +350,9 @@ def describe(text: str) -> Described:
         d.recognized.insert(0, "banknote")
         return _clean(d)
 
-    # a US silver proof set: the composition is the whole set's silver
-    if re.search(r"\bsilver\s*proof\s*set\b", low) and d.details.get("year"):
-        y = d.details["year"]
-        quarters_only = bool(re.search(r"\bquarters?\b", low))
-        key = _proof_set_key(y, quarters_only)
-        d.item_type = "coin"
-        d.metal = "Ag"
-        d.details["country"] = "United States"
-        d.details["series"] = "Silver Proof Set" if not quarters_only else "Quarters Silver Proof Set"
-        d.details["denomination"] = "set"
-        d.composition_key = key
-        if re.search(r"\b(box|ogp|coa|certificate\s*of\s*authenticity)\b", low):
-            d.notes.append("Original government packaging with certificate")
-        d.recognized.insert(0, f"{y}-S {d.details['series'].lower()}")
-        return _clean(d)
+    # a mint or proof set: one item, with the coins inside it listed (and its silver added up from them)
+    if SET_RE.search(low) and not grade_text:
+        return _clean(_mint_set(d, raw, low))
 
     lot = LOT_RE.search(raw)
     if lot and lot.group(1):
@@ -398,7 +386,7 @@ def describe(text: str) -> Described:
 
     if is_bar and not bullion:
         d.item_type = "bar"
-        canonical = {"PAMP": "PAMP Suisse", "RCM": "Royal Canadian Mint", "Sunshine": "Sunshine Minting"}
+        canonical = {"PAMP": "PAMP Suisse", "RCM": "Royal Canadian Mint", "Sunshine": "Sunshine Minting", "Geiger": "Geiger Edelmetalle"}
         if refiner:
             d.details["refiner"] = canonical.get(refiner, refiner)
         if multi:
@@ -501,23 +489,55 @@ def describe(text: str) -> Described:
     return _clean(d)
 
 
-def _proof_set_key(year: int, quarters_only: bool) -> str | None:
-    if quarters_only:
-        for y0, y1, key in ((1999, 2008, "us-set-quarters-states"), (2009, 2009, "us-set-quarters-dc"),
-                            (2010, 2018, "us-set-quarters-atb-90"), (2019, 2020, "us-set-quarters-atb-999"),
-                            (2022, 2025, "us-set-quarters-women")):
-            if y0 <= year <= y1:
-                return key
-        return None
-    if 1992 <= year <= 1998:
-        return "us-set-silver-1992"
-    if year == 2009:
-        return "us-set-silver-2009"
-    if 1999 <= year <= 2018:
-        return "us-set-silver-1999"
-    if 2019 <= year <= 2025 and year != 2021:
-        return "us-set-silver-999"
-    return None
+SET_RE = re.compile(r"\bproof\s*sets?\b|\bmint\s*sets?\b|\buncirculated\s*(?:coin\s*)?sets?\b|\bsms\b")
+# "State Quarters Silver Proof Set" is the five quarters alone; "Silver Proof Set with State Quarters and
+# Presidential Dollars" (or "14-coin") is the whole year's set
+QUARTERS_ONLY_RE = re.compile(r"\bquarters?\b|\b[56][\s-]*(?:coins?|pc|pcs|piece)\b")
+WHOLE_SET_RE = re.compile(r"\bdollars?\b|\bdime\b|\bcent\b|\bnickel\b|\b(?:[79]|1[0-8])[\s-]*(?:coins?|pc|pcs|piece)\b")
+
+
+def _mint_set(d: Described, raw: str, low: str) -> Described:
+    """"2008 United States 50 State Quarters Silver Proof Set": the set, and for a US proof set the coins in it."""
+    from app.services import mint_sets
+
+    year = d.details.get("year")
+    named = find_country(raw)
+    us = named in (None, US)
+    if re.search(r"\bspecial\s*mint\s*sets?\b|\bsms\b", low):
+        kind = "special"
+    elif re.search(r"\bproof\s*sets?\b", low):
+        kind = "silver_proof" if re.search(r"\bsilver\b", low) else "proof"
+    else:
+        kind = "uncirculated"
+    quarters_only = bool(QUARTERS_ONLY_RE.search(low)) and not WHOLE_SET_RE.search(low)
+    spec = mint_sets.contents(year, kind, quarters_only) if us else None
+    d.item_type = "set"
+    d.composition_key = None
+    d.details = {
+        "country": "United States" if us else named,
+        "year": year,
+        "mint_mark": (spec.mint_mark if spec else None) or d.details.get("mint_mark"),
+        "set_kind": kind,
+        "name": spec.name if spec else {"proof": "Proof Set", "silver_proof": "Silver Proof Set", "special": "Special Mint Set",
+                                        "uncirculated": "Uncirculated Mint Set"}[kind],
+    }
+    if spec:
+        d.details["coins"] = [c.as_dict() for c in spec.coins]
+        silver = spec.pure_toz().get("Ag")
+        d.metal = "Ag" if silver else None
+        d.recognized = [f"{year}{'-' + spec.mint_mark if spec.mint_mark else ''} {spec.name.lower()}",
+                        f"{len(spec.coins)} coins" + (f", {_plain(silver.quantize(Decimal('0.0001')))} ozt silver" if silver else ", no silver")]
+    else:
+        d.metal = "Ag" if kind == "silver_proof" else None
+        d.recognized = [" ".join(str(x) for x in (year, d.details["name"].lower()) if x), "coins not filled in: add them below"]
+    counted = QTY_RE.search(raw)
+    if counted and counted.group(2):  # "14 coins" says what is in the set, not how many sets
+        d.quantity = 1
+    if d.quantity > 1:
+        d.recognized.append(f"quantity {d.quantity}")
+    if re.search(r"\b(box|ogp|coa|certificate\s*of\s*authenticity)\b", low):
+        d.notes.append("Original government packaging with certificate")
+    return d
 
 
 def _clean(d: Described) -> Described:
