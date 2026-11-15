@@ -7,6 +7,11 @@ import json
 
 import httpx
 
+# SoldComps' billing period in the fake answers: always the one we're in, so the tests don't expire with it
+_NOW = dt.datetime.now(dt.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+PERIOD_START = (_NOW - dt.timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+PERIOD_END = (_NOW + dt.timedelta(days=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 def _recent(at: dt.datetime | None = None) -> dt.datetime:
     """The time providers stamp their prices with: the given moment, or an hour before now (never 'out of date')."""
@@ -180,21 +185,21 @@ class FakeProviders:
                 return httpx.Response(401, json={"error": "Invalid API key"})
             if self.soldcomps_scrape_status == 429:
                 return httpx.Response(429, json={"code": "quota_exceeded", "error": "Monthly quota exceeded", "plan": "free",
-                                                 "limit": 100, "used": 100, "remaining": 0, "reset_at": "2026-11-14T00:00:00Z"})
+                                                 "limit": 100, "used": 100, "remaining": 0, "reset_at": PERIOD_END})
             self.soldcomps_used += 1
             self.scrape_params.append(dict(url.params))
             return httpx.Response(200, json={
                 "keyword": url.params.get("keyword"), "page": 1, "totalItems": len(self.sold_items),
                 "totalResults": "1,200+", "hasNextPage": True, "autoSelectedCategory": None, "items": self.sold_items,
             }, headers={"X-Usage-Limit": "100", "X-Usage-Used": str(self.soldcomps_used),
-                        "X-Usage-Remaining": str(100 - self.soldcomps_used), "X-Usage-Reset": "2026-11-14T00:00:00Z"})
+                        "X-Usage-Remaining": str(100 - self.soldcomps_used), "X-Usage-Reset": PERIOD_END})
         if url.host == "api.sold-comps.com" and url.path == "/usage":
             if request.headers.get("Authorization") != "Bearer sc_testkey1234":
                 return httpx.Response(401, json={"error": "invalid key"})
             body = self.soldcomps_usage or {
                 "plan": "free",
                 "plan_label": "Free",
-                "usage": {"limit": 100, "used": 12, "remaining": 88, "period_start": "2026-10-14T00:00:00Z", "reset_at": "2026-11-14T00:00:00Z"},
+                "usage": {"limit": 100, "used": 12, "remaining": 88, "period_start": PERIOD_START, "reset_at": PERIOD_END},
                 "rate_limit": {"rpm": 60, "remaining": 60, "reset": None},
                 "credits": {"balance": 0},
             }
