@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import Principal, read_items, write_items
 from app.compositions_seed import SILVER_ONLY_PREFIXES
+from app.services import base_metals
 from app.models import Composition, ItemMetalContent, LotDetails
 from app.schemas import Metal
 from app.services.coin_words import US, canonical_country, denom_key, fold, us_denom
@@ -123,6 +124,12 @@ def match(
     metal = {"gold": "Au", "silver": "Ag", "platinum": "Pt", "palladium": "Pd"}[named.group(1)] if named else None
     says_oz = bool(re.search(r"\boz\b|ounce|onza", f"{series or ''} {denomination or ''}".lower()))
     words = [w for w in re.findall(r"[a-z]{4,}", fold(series or "").lower()) if w not in _GENERIC]
+    # A US coin whose date and denomination were struck for circulation in base metal (a 2000 dollar, a 1971 dollar)
+    # is that, unless the text names a precious metal: silver and gold versions of the same date are the exception.
+    # (1971-S and 1972-S dollars were only struck in 40% silver.)
+    only_silver = us_code == "$1" and year in (1971, 1972) and (mint_mark or "").upper() == "S"
+    if metal is None and country in (None, US) and not only_silver and base_metals.lookup(US, denomination or series, year, mint_mark, series):
+        return []
     scored: list[tuple[int, Composition]] = []
     for c in db.scalars(select(Composition).where(_visible(principal), Composition.per_face_unit.is_(False))):
         if metal and c.metal != metal:

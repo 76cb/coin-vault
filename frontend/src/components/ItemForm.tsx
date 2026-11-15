@@ -317,6 +317,15 @@ export function defaultsFromDescription(d: Described): Partial<FormState> {
     if (comp) details.composition_id = String(comp.id);
   } else if (comp && !comp.per_face_unit) {
     metals = [{ metal: comp.metal, gross_weight_g: "", fineness: "", pure_toz: "", composition_id: String(comp.id) }];
+  } else if (d.stamped) {
+    // no reference fits: the weight and fineness written on it (whole troy ounces shown as ounces)
+    const g = Number(d.stamped.gross_weight_g);
+    const oz = g / GRAMS_PER.ozt;
+    const inOz = Math.abs(oz * 20 - Math.round(oz * 20)) < 0.001;
+    metals = [{
+      metal: d.stamped.metal, gross_weight_g: inOz ? String(Math.round(oz * 20) / 20) : tidy(d.stamped.gross_weight_g),
+      gross_unit: inOz ? "ozt" : "g", fineness: tidy(d.stamped.fineness), pure_toz: "", composition_id: "",
+    }];
   } else if (d.metal && d.item_type === "bar") {
     metals = [{ metal: d.metal, gross_weight_g: "", fineness: "", pure_toz: "", composition_id: "" }];
   }
@@ -337,6 +346,11 @@ export function defaultsFromDescription(d: Described): Partial<FormState> {
     coins,
     notes: d.notes.join("\n"),
   };
+}
+
+/** The item to save straight from what a scan or title read, with every detail and its metal: no form in between. */
+export function payloadFromDescription(d: Described, title: string): Record<string, unknown> {
+  return toPayload(fromItem(undefined, { ...defaultsFromDescription(d), title }));
 }
 
 /** Starting values from a Numista coin and one of its issues, on top of what the typed title already gave. */

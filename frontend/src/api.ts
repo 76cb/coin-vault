@@ -620,6 +620,8 @@ export interface Described {
   recognized: string[];
   notes: string[];
   compositions: (Composition & { score: number })[];
+  /** With no reference that fits: the metal from the weight and fineness written in the title or stamped on the piece. */
+  stamped?: { metal: Metal; gross_weight_g: string; fineness: string | null; fineness_assumed: boolean } | null;
 }
 
 export interface PcgsCoin {

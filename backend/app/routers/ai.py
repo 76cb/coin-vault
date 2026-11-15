@@ -3,6 +3,8 @@ for a raw coin, and spot pieces you already have. Admins set the server up under
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -201,7 +203,11 @@ DETAIL_KEYS = {
 
 def _form_values(db: Session, principal: Principal, i: ai.Identified) -> DescribeOut:
     """What the title reader makes of the model's title, with the gaps filled from what the model read directly."""
-    d = describe(ai.listing_title(i))
+    text = ai.listing_title(i)
+    word = {"Au": "gold", "Ag": "silver", "Pt": "platinum", "Pd": "palladium"}.get(i.metal or "")
+    # the metal the model saw counts as if the title said it ("Buffalo Round" in silver is not a Gold Buffalo)
+    d = describe(f"{text} {word}" if word and not re.search(r"\b(gold|silver|platinum|palladium)\b", text, re.I) else text)
+    d.title = text[:300] if not d.title or d.title.startswith(text[:300]) else d.title
     if i.kind in ("bar", "banknote", "set", "other") and d.item_type != i.kind and not d.recognized:
         d.item_type = i.kind
         d.details = {}
@@ -228,7 +234,7 @@ def _form_values(db: Session, principal: Principal, i: ai.Identified) -> Describ
             d.recognized.append(f"cert {h.cert_number}")
         if h.pcgs_number and d.item_type in ("coin", "bullion"):
             d.details["pcgs_number"] = h.pcgs_number
-    return described_out(db, principal, d)
+    return described_out(db, principal, d, stamped_text=i.weight_text)
 
 
 def _match(it, why: str) -> MatchOut:

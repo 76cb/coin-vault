@@ -16,7 +16,7 @@ from app.models import Composition
 from app.routers.compositions import CompositionMatchOut, _out, _visible, match
 from app.services import base_metals
 from app.services.coin_words import denom_key
-from app.services.describe import LINE_WORDS, Described, describe
+from app.services.describe import LINE_WORDS, Described, _plain, describe, stated_fineness, stated_grams
 
 router = APIRouter(tags=["items"])
 
@@ -25,6 +25,13 @@ UNIT_G = {"g": Decimal(1), "ozt": Decimal("31.1034768"), "kg": Decimal(1000), "t
 
 class DescribeIn(BaseModel):
     text: str = Field(min_length=1, max_length=500)
+
+
+class StampedMetal(BaseModel):
+    metal: str
+    gross_weight_g: Decimal
+    fineness: Decimal | None  # None: not stated, and not safe to assume
+    fineness_assumed: bool = False  # a bullion bar or round with no fineness written: taken as .999 (.9995 Pt, Pd)
 
 
 class DescribeOut(BaseModel):
@@ -37,13 +44,15 @@ class DescribeOut(BaseModel):
     recognized: list[str]
     notes: list[str]
     compositions: list[CompositionMatchOut]  # best first; equal scores fit equally well
+    stamped: StampedMetal | None = None  # with no reference that fits: the metal worked out from the weight and fineness given
 
 
 PRODUCT_WORDS = ("combibar", "fortuna", "skyline", "multidisc", "multicard", "kinebar")
 
 
 def _bar_matches(db: Session, principal: Principal, metal: str | None, refiner: str | None, weight: str | None, unit: str | None, text: str = ""):
-    if not metal or not weight:
+    # with no maker named, no maker's bar is offered: the weight and fineness are worked out instead (_stamped)
+    if not metal or not weight or not refiner:
         return []
     try:
         grams = Decimal(weight) * UNIT_G[unit or "g"]
@@ -108,7 +117,31 @@ def describe_item(body: DescribeIn, principal: Principal = Depends(read_items), 
     return described_out(db, principal, describe(body.text))
 
 
-def described_out(db: Session, principal: Principal, d: Described) -> DescribeOut:
+def _stamped(d: Described, text: str) -> StampedMetal | None:
+    """The metal row for a piece no reference fits, from the weight and fineness in the text (a scan passes what is
+    stamped on the piece too). A bullion bar or round with no fineness written is taken as .999, and says so."""
+    if not d.metal or d.item_type not in ("bar", "bullion", "coin", "other"):
+        return None
+    grams = None
+    if d.item_type == "bar" and d.details.get("weight_value"):
+        try:
+            grams = Decimal(str(d.details["weight_value"])) * UNIT_G[d.details.get("weight_unit") or "g"]
+        except Exception:
+            grams = None
+    if grams is None and d.size_toz is not None:
+        grams = d.size_toz * UNIT_G["ozt"]
+    if grams is None:
+        grams = stated_grams(text)
+    if not grams or grams <= 0:
+        return None
+    fine = stated_fineness(text)
+    assumed = False
+    if fine is None and (d.item_type == "bar" or re.search(r"\b(rounds?|bars?|ingots?|bullion)\b", text, re.I)):
+        fine, assumed = Decimal("0.9995") if d.metal in ("Pt", "Pd") else Decimal("0.999"), True
+    return StampedMetal(metal=d.metal, gross_weight_g=grams.quantize(Decimal("0.0001")), fineness=fine, fineness_assumed=assumed)
+
+
+def described_out(db: Session, principal: Principal, d: Described, stamped_text: str | None = None) -> DescribeOut:
     """What the title reader understood, with the reference compositions that fit it."""
     comps: list[CompositionMatchOut] = []
     face = d.details.get("denomination") if d.item_type == "bullion" and d.size_toz is None else None
@@ -138,9 +171,18 @@ def described_out(db: Session, principal: Principal, d: Described) -> DescribeOu
             if hit.weight_g is not None:
                 d.details["weight_g"] = str(hit.weight_g)
             d.recognized.append("no precious metal")
+    stamped = None if comps else _stamped(d, f"{d.title} {stamped_text or ''}")
+    if stamped is not None:
+        word = {"Au": "gold", "Ag": "silver", "Pt": "platinum", "Pd": "palladium"}[stamped.metal]
+        if stamped.fineness is None:
+            d.recognized.append(f"{_plain(stamped.gross_weight_g)} g {word}, fineness not given: add it below")
+        else:
+            pure = (stamped.gross_weight_g / UNIT_G["ozt"] * stamped.fineness).quantize(Decimal("0.0001"))
+            d.recognized.append(f"{_plain(pure)} ozt {word} at {_plain(stamped.fineness)}"
+                                + (" (fineness assumed: check the piece)" if stamped.fineness_assumed else ""))
     return DescribeOut(
         item_type=d.item_type, title=d.title, quantity=d.quantity, metal=d.metal, details=d.details,
-        condition=d.condition, recognized=d.recognized, notes=d.notes, compositions=comps,
+        condition=d.condition, recognized=d.recognized, notes=d.notes, compositions=comps, stamped=stamped,
     )
 
 

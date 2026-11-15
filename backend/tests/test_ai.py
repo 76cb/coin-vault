@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import json
+from decimal import Decimal
 
 import httpx
 import pytest
@@ -280,3 +281,17 @@ def test_pcgs_label_numbers_line():
     # NGC certs keep their dash
     ngc = {**pcgs, "holder": {**pcgs["holder"], "service": "NGC", "cert_number": "8698301-036", "label_text": "2025 D 1C"}}
     assert parse_identified(ngc).holder.cert_number == "8698301-036"
+
+
+def test_a_scan_uses_the_weight_stamped_on_the_piece(api, fake, images):
+    """A generic round has no reference row: its metal comes from what the model read off it."""
+    setup_ai(api)
+    _, photos = item_with_photos(api, images, seeds=(71, 72))
+    refs = [{"sha256": p["sha256"], "role": p["role"]} for p in photos]
+    fake.answer = {**IDENT, "kind": "bullion", "country": "", "denomination": "", "year": 0, "mint_mark": "", "series": "Buffalo round",
+                   "metal": "silver", "weight_text": "1 TROY OZ .999 FINE SILVER", "title": "Buffalo Round"}
+    d = api.post("/api/v1/ai/identify", json={"photos": refs}).json()["described"]
+    assert d["compositions"] == [] and d["metal"] == "Ag"
+    assert d["stamped"]["fineness_assumed"] is False
+    assert (Decimal(d["stamped"]["gross_weight_g"]), Decimal(d["stamped"]["fineness"])) == (Decimal("31.1035"), Decimal("0.999"))
+    assert "0.999 ozt silver at 0.999" in d["recognized"]
