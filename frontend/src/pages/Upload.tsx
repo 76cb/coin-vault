@@ -2,9 +2,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { AiPhotoRef, api, ITEM_TYPE_LABELS, ItemType, PhotoRole, PickedPhoto, ROLE_LABELS, UploadGroup, UploadResult } from "../api";
+import { AiPhotoRef, api, Described, ITEM_TYPE_LABELS, ItemType, PhotoRole, PickedPhoto, ROLE_LABELS, UploadGroup, UploadResult } from "../api";
 import { AiIdentify, useAiReady } from "../components/Ai";
 import DropZone from "../components/DropZone";
+import { payloadFromDescription } from "../components/ItemForm";
 import ItemPicker from "../components/ItemPicker";
 import { DuplicateNote, QualityNote } from "../components/QualityNote";
 
@@ -117,6 +118,7 @@ function GroupCard({
   const ai = useAiReady();
   const [title, setTitle] = useState(group.pairing_rule === "pattern" || group.pairing_rule === "manual" ? group.label ?? "" : "");
   const [type, setType] = useState<ItemType>("coin");
+  const [scan, setScan] = useState<Described | null>(null); // what the photo AI read, once "Use this" is pressed
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -172,8 +174,8 @@ function GroupCard({
           photos={refs}
           extra={(r) => (
             <div className="ai-actions">
-              <button type="button" className="primary" onClick={() => { setTitle(r.described.title); setType(r.described.item_type); }}>Use this title</button>
-              <button type="button" onClick={() => navigate("/items/new", { state: { photos: picked, described: r.described } })}>Fill in all the details</button>
+              <button type="button" className="primary" onClick={() => { setTitle(r.described.title); setType(r.described.item_type); setScan(r.described); }}>Use this</button>
+              <button type="button" onClick={() => navigate("/items/new", { state: { photos: picked, described: r.described } })}>Check the details first</button>
             </div>
           )}
         />
@@ -189,7 +191,9 @@ function GroupCard({
             onSubmit={(e) => {
               e.preventDefault();
               run(async () => {
-                const item = await api.createItemFromGroup(group.id, { item_type: type, title: title.trim() });
+                // everything the scan read goes with it (details, grade, metal), unless the type was changed since
+                const body = scan && scan.item_type === type ? payloadFromDescription(scan, title.trim()) : { item_type: type, title: title.trim() };
+                const item = await api.createItemFromGroup(group.id, body);
                 onSaved(item.id, item.title);
                 await qc.invalidateQueries({ queryKey: ["items"] });
               });
@@ -200,6 +204,9 @@ function GroupCard({
               {Object.entries(ITEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
             <button className="primary" disabled={busy || !title.trim()}>Create item</button>
+            {scan && scan.item_type === type && (
+              <span className="hint scan-note">Saves what the scan read: {scanSummary(scan)}. You can edit it afterwards.</span>
+            )}
           </form>
         ) : (
           <ItemPicker
@@ -217,4 +224,16 @@ function GroupCard({
       {error && <p className="error" role="alert">{error}</p>}
     </li>
   );
+}
+
+/** "details, grade, 1 ozt silver" for the note under Create item. */
+function scanSummary(d: Described): string {
+  const parts = ["details"];
+  if (d.condition) parts.push("grade");
+  const comp = d.compositions.length && d.compositions.filter((c) => c.score === d.compositions[0].score).length === 1 ? d.compositions[0] : null;
+  if (Array.isArray(d.details.coins) && d.details.coins.length) parts.push(`${d.details.coins.length} coins`);
+  else if (comp) parts.push(`metal (${comp.label})`);
+  else if (d.stamped?.fineness) parts.push(d.stamped.fineness_assumed ? "metal (fineness assumed .999: check it)" : "metal");
+  else parts.push("no metal: add it on the item");
+  return parts.join(", ");
 }

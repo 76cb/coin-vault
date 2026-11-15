@@ -163,7 +163,7 @@ DENOM_RE = re.compile(
 )
 WORD_DENOMS = {"half dollar": "50c", "quarter dollar": "25c", "dime": "10c", "quarter": "25c", "nickel": "5c",
                "cent": "1c", "penny": "1c", "dollar": "$1"}
-SIZE_RE = re.compile(r"\b(\d+/\d+|\d+(?:\.\d+)?)\s?(troy\s*oz|ozt|oz|ounces?|kilos?|kg|grams?|gr|g)\b", re.I)
+SIZE_RE = re.compile(r"\b(\d+/\d+|\d+(?:\.\d+)?)\s?(troy\s*(?:oz|ounces?)|ozt|oz|ounces?|kilos?|kg|grams?|gr|g)\b", re.I)
 BANKNOTE_RE = re.compile(r"\b(silver\s*certificate|gold\s*certificate|federal\s*reserve\s*note|frn|legal\s*tender|"
                          r"national\s*bank\s*note|banknote|bank\s*note|pmg|fr\.?\s?\d{3,4})\b", re.I)
 LOT_RE = re.compile(r"\$\s?(\d+(?:\.\d+)?)\s*(?:face|fv)\b|\bjunk\s*silver\b", re.I)
@@ -198,7 +198,7 @@ def _size_g(amount: str, unit: str) -> tuple[Decimal, str, str]:
     else:
         qty = Decimal(amount)
     u = unit.lower().replace(" ", "")
-    if u.startswith(("oz", "troyoz", "ounce")) or u == "ozt":
+    if u.startswith(("oz", "troy", "ounce")):
         return qty * Decimal("31.1034768"), amount, "ozt"
     if u.startswith(("kg", "kilo")):
         return qty * 1000, amount, "kg"
@@ -380,7 +380,10 @@ def describe(text: str) -> Described:
         line = {"Au": "American Gold Eagle", "Ag": "American Silver Eagle", "Pt": "American Platinum Eagle", "Pd": "American Palladium Eagle"}
         bullion = (line[d.metal], "United States", d.metal)
     for pat, line, country, default_metal in ([] if bullion else BULLION):
-        if re.search(pat, low) and not (line == "American Gold Buffalo" and re.search(r"buffalo\s*nickel", low)):
+        if line == "American Gold Buffalo" and (re.search(r"buffalo\s*nickel", low) or d.metal not in (None, "Au")
+                                                or (re.search(r"\brounds?\b", low) and d.metal != "Au")):
+            continue  # a nickel, or a private "buffalo" round (usually silver): not the US Mint's gold coin
+        if re.search(pat, low):
             bullion = (line, country, default_metal)
             break
 
@@ -538,6 +541,37 @@ def _mint_set(d: Described, raw: str, low: str) -> Described:
     if re.search(r"\b(box|ogp|coa|certificate\s*of\s*authenticity)\b", low):
         d.notes.append("Original government packaging with certificate")
     return d
+
+
+FINENESS_DECIMAL = re.compile(r"(?<![\d.])0?\.(9995|9999|999|958|925|917|9167|900|835|800|750|585|500|400|350)(?!\d)")
+FINENESS_MILLE = re.compile(r"(?<![\d.,])(999[.,]9|999[.,]5|9999|9995|999|925)(?![\d.,]|\s?(?:g|gr|grams?|oz|kg)\b)")
+FINENESS_PERCENT = re.compile(r"(?<![\d.])(99\.99|99\.95|99\.9|92\.5|90|80|50|40|35)\s?%")
+KARAT = re.compile(r"\b(24|22|21|18|14|10|9)\s?(?:k|kt|ct|karat|carat)\b", re.I)
+
+
+def stated_fineness(text: str) -> Decimal | None:
+    """The fineness written in a title or stamped on a piece: ".999", "999.9", "99.9%", "sterling", "22K", "fine silver"."""
+    low = text.lower()
+    if m := FINENESS_DECIMAL.search(low):
+        return Decimal("0." + m.group(1))
+    if m := FINENESS_MILLE.search(low):
+        return Decimal("0." + re.sub(r"[.,]", "", m.group(1)))
+    if m := FINENESS_PERCENT.search(low):
+        return Decimal(m.group(1)) / 100
+    if re.search(r"\bsterling\b", low):
+        return Decimal("0.925")
+    if m := KARAT.search(low):
+        return {24: Decimal("0.999"), 22: Decimal("0.9167"), 21: Decimal("0.875"), 18: Decimal("0.750"), 14: Decimal("0.585"),
+                10: Decimal("0.417"), 9: Decimal("0.375")}[int(m.group(1))]
+    if re.search(r"\bfine\s*(?:silver|gold|platinum|palladium)\b|\bfein(?:silber|gold)\b", low):
+        return Decimal("0.999")  # "fine" metal is at least three nines
+    return None
+
+
+def stated_grams(text: str) -> Decimal | None:
+    """The weight written in a title or stamped on a piece ("1 OZ", "10 g", "1/2 oz"), in grams."""
+    m = SIZE_RE.search(text)
+    return _size_g(m.group(1), m.group(2))[0] if m else None
 
 
 def _clean(d: Described) -> Described:

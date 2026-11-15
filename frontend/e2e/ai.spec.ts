@@ -134,10 +134,10 @@ test("AI on a bulk upload: use its title, or fill in every detail on Add item", 
 
   await card.getByRole("button", { name: "Identify from the photos" }).click();
   await expect(card.locator(".ai-holder")).toContainText("In a PCGS holder, graded PR70 DCAM, cert 3257-3628, PCGS #382795.");
-  await card.getByRole("button", { name: "Use this title" }).click();
+  await card.getByRole("button", { name: "Use this", exact: true }).click();
   await expect(card.getByLabel("Title", { exact: true })).toHaveValue("2015 S Bombay Hook Quarter PCGS PR70 DCAM");
 
-  await card.getByRole("button", { name: "Fill in all the details" }).click();
+  await card.getByRole("button", { name: "Check the details first" }).click();
   await expect(page.getByRole("heading", { name: "Add item" })).toBeVisible();
   await expect(page.getByText("Filled in from what the AI read on the photos.")).toBeVisible();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("2015 S Bombay Hook Quarter PCGS PR70 DCAM");
@@ -145,5 +145,37 @@ test("AI on a bulk upload: use its title, or fill in every detail on Add item", 
   await expect(page.locator(".chosen-list li")).toHaveCount(2);
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("heading", { name: "2015 S Bombay Hook Quarter PCGS PR70 DCAM" })).toBeVisible();
+  await expect(page.locator(".photo-list li")).toHaveCount(2);
+});
+
+test("AI on a bulk upload: Use this, then Create item saves the details and the metal the scan read", async ({ page }) => {
+  await aiOn(page);
+  const tag = unique("ai-metal").replace(/\s/g, "_");
+  const title = unique("Buffalo Round");
+  await page.route("**/api/v1/ai/identify", (route) => route.fulfill({
+    json: identified(title, [], {
+      weight_text: "1 TROY OZ .999 FINE SILVER",
+      described: described(title, {
+        item_type: "bullion", metal: "Ag", details: { product_line: "Buffalo round" },
+        stamped: { metal: "Ag", gross_weight_g: "31.1035", fineness: "0.999", fineness_assumed: false },
+      }),
+    }),
+  }));
+  await signIn(page);
+  await page.getByRole("link", { name: "Upload photos" }).first().click();
+  await page.locator(".dropzone input[type=file]").setInputFiles([own("0007_obv.jpg", tag), own("0007_rev.jpg", tag)].map((f, i) => ({ ...f, name: `${tag}_${i ? "rev" : "obv"}.jpg` })));
+  const card = page.locator(".group-card", { hasText: `${tag}_obv.jpg` });
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await card.getByRole("button", { name: "Identify from the photos" }).click();
+  await card.getByRole("button", { name: "Use this", exact: true }).click();
+  await expect(card.getByText("Saves what the scan read: details, metal.")).toBeVisible();
+  await card.getByRole("button", { name: "Create item" }).click();
+
+  await page.getByRole("link", { name: "Collection" }).first().click();
+  await page.getByLabel("Search").fill(title);
+  await page.locator(".flip-card", { hasText: title }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await expect(page.getByText("Bullion coin or round")).toBeVisible();
+  await expect(page.getByText("0.999 ozt").first()).toBeVisible(); // 1 troy oz x .999, with nothing typed
   await expect(page.locator(".photo-list li")).toHaveCount(2);
 });
