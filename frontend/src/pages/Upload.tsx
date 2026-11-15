@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { AiPhotoRef, api, Described, ITEM_TYPE_LABELS, ItemType, PhotoRole, PickedPhoto, ROLE_LABELS, UploadGroup, UploadResult } from "../api";
+import { AiIdentify as Identified, AiPhotoRef, api, Described, ITEM_TYPE_LABELS, ItemType, PhotoRole, PickedPhoto, ROLE_LABELS, UploadGroup, UploadResult } from "../api";
 import { AiIdentify, useAiReady } from "../components/Ai";
 import DropZone from "../components/DropZone";
 import { payloadFromDescription } from "../components/ItemForm";
@@ -26,6 +26,48 @@ export default function Upload() {
   const [done, setDone] = useState<{ id: number; title: string }[]>([]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["upload-groups"] });
+  const ai = useAiReady();
+  // Identify all: each group is scanned in turn (one at a time, so the AI server isn't swamped)
+  const [scans, setScans] = useState<Record<number, Identified>>({});
+  const [scanning, setScanning] = useState<{ done: number; total: number } | null>(null);
+  const [scanErrors, setScanErrors] = useState<string[]>([]);
+  const [creating, setCreating] = useState(false);
+  const refsOf = (g: UploadGroup): AiPhotoRef[] => g.files.filter((f) => f.sha256).map((f) => ({ sha256: f.sha256!, role: f.role }));
+
+  async function identifyAll() {
+    const todo = (groups.data ?? []).filter((g) => !scans[g.id] && refsOf(g).length > 0);
+    setScanErrors([]);
+    setScanning({ done: 0, total: todo.length });
+    for (const [i, g] of todo.entries()) {
+      try {
+        const r = await api.aiIdentify(refsOf(g));
+        setScans((s) => ({ ...s, [g.id]: r }));
+      } catch (err) {
+        setScanErrors((e) => [...e, `${g.files[0]?.original_filename ?? `Group ${g.id}`}: ${(err as Error).message}`]);
+      }
+      setScanning({ done: i + 1, total: todo.length });
+    }
+    setScanning(null);
+  }
+
+  async function createAll() {
+    const ready = (groups.data ?? []).filter((g) => scans[g.id]);
+    setCreating(true);
+    setError(null);
+    try {
+      for (const g of ready) {
+        const d = scans[g.id].described;
+        const item = await api.createItemFromGroup(g.id, payloadFromDescription(d, d.title));
+        setDone((x) => [{ id: item.id, title: item.title }, ...x].slice(0, 12));
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCreating(false);
+      await refresh();
+      await qc.invalidateQueries({ queryKey: ["items"] });
+    }
+  }
 
   async function upload(files: File[]) {
     setBusy(true);
@@ -51,6 +93,7 @@ export default function Upload() {
   }
 
   const pending = groups.data ?? [];
+  const scanned = pending.filter((g) => scans[g.id]).length;
 
   return (
     <>
@@ -80,6 +123,27 @@ export default function Upload() {
           <button className="ghost small" disabled={selected.length < 2} onClick={merge}>
             Merge {selected.length >= 2 ? selected.length : ""} selected
           </button>
+          {ai && (
+            <button className="small" disabled={scanning !== null || creating || scanned === pending.length} onClick={identifyAll}>
+              {scanning ? `Identifying ${Math.min(scanning.done + 1, scanning.total)} of ${scanning.total}…` : scanned ? `Identify the other ${pending.length - scanned}` : `Identify all ${pending.length}`}
+            </button>
+          )}
+          {scanned > 0 && (
+            <button className="primary small" disabled={scanning !== null || creating} onClick={createAll}>
+              {creating ? "Creating…" : `Create ${scanned} ${scanned === 1 ? "item" : "items"} as read`}
+            </button>
+          )}
+        </div>
+      )}
+      {scanned > 0 && !scanning && (
+        <p className="hint" role="status">
+          {scanned} identified. Check each below (or change a title), then create them one by one, or all at once as the scan read them.
+        </p>
+      )}
+      {scanErrors.length > 0 && (
+        <div className="notice" role="status">
+          <p>{scanErrors.length} couldn't be identified:</p>
+          <ul>{scanErrors.map((e) => <li key={e}>{e}</li>)}</ul>
         </div>
       )}
       {groups.data && pending.length === 0 && !busy && <p className="empty">Nothing waiting. Uploaded photos appear here until you save or discard them.</p>}
@@ -89,6 +153,7 @@ export default function Upload() {
           <GroupCard
             key={g.id}
             group={g}
+            preset={scans[g.id] ?? null}
             selected={selected.includes(g.id)}
             onSelect={(on) => setSelected((s) => (on ? [...s, g.id] : s.filter((x) => x !== g.id)))}
             onChanged={refresh}
@@ -102,12 +167,14 @@ export default function Upload() {
 
 function GroupCard({
   group,
+  preset,
   selected,
   onSelect,
   onChanged,
   onSaved,
 }: {
   group: UploadGroup;
+  preset: Identified | null; // what Identify all read for this group
   selected: boolean;
   onSelect: (on: boolean) => void;
   onChanged: () => Promise<unknown>;
@@ -120,6 +187,14 @@ function GroupCard({
   const [type, setType] = useState<ItemType>("coin");
   const [scan, setScan] = useState<Described | null>(null); // what the photo AI read, once "Use this" is pressed
   const [mode, setMode] = useState<"new" | "existing">("new");
+  // Identify all fills the title in, as if "Use this" had been pressed (a title already typed is kept)
+  useEffect(() => {
+    if (!preset) return;
+    setScan(preset.described);
+    setType(preset.described.item_type);
+    setTitle((t) => (t.trim() && t !== (group.label ?? "") ? t : preset.described.title));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -172,6 +247,7 @@ function GroupCard({
         <AiIdentify
           key={refs.map((r) => r.sha256 + r.role).join()}
           photos={refs}
+          preset={preset}
           extra={(r) => (
             <div className="ai-actions">
               <button type="button" className="primary" onClick={() => { setTitle(r.described.title); setType(r.described.item_type); setScan(r.described); }}>Use this</button>

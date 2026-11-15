@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
+import { useCanWrite } from "../access";
 import { api, ApiToken } from "../api";
 import Backups from "../components/Backups";
 import AiSettings from "../components/AiSettings";
@@ -17,6 +18,7 @@ const SCOPES: [string, string][] = [
 ];
 
 export default function Settings({ user, admin }: { user: string; admin: boolean }) {
+  const canWrite = useCanWrite();
   return (
     <>
       <div className="page-head">
@@ -24,17 +26,65 @@ export default function Settings({ user, admin }: { user: string; admin: boolean
       </div>
       <div className="settings">
         <Appearance />
-        <PriceSettings />
-        <Providers />
-        <Locations />
-        <Tags />
+        {canWrite && <PriceSettings />}
+        {canWrite && <Providers />}
+        {canWrite && <Locations />}
+        {canWrite && <Tags />}
         {admin && <AiSettings />}
         {admin && <ValueUpdates />}
         {admin && <Backups />}
-        <Tokens />
+        {canWrite && <Viewers />}
+        {canWrite && <Tokens />}
         <Password user={user} />
       </div>
     </>
+  );
+}
+
+/** Logins that can look at the collection and change nothing: for a spouse, an heir or an insurer. */
+function Viewers() {
+  const qc = useQueryClient();
+  const viewers = useQuery({ queryKey: ["viewers"], queryFn: api.viewers });
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const { error, busy, run } = useRun();
+  const refresh = () => qc.invalidateQueries({ queryKey: ["viewers"] });
+  return (
+    <section className="panel" id="viewers">
+      <h2>Read-only logins</h2>
+      <p className="muted">
+        A login for someone who should be able to see the collection, its values and reports, and change nothing: a spouse, an heir, an insurer.
+        They sign in at the same address as you.
+      </p>
+      <ul className="plain-list">
+        {viewers.data?.map((v) => (
+          <li key={v.id}>
+            <span>{v.username}</span>
+            <span className="hint">{v.last_login_at ? `last signed in ${new Date(v.last_login_at).toLocaleDateString()}` : "never signed in"}</span>
+            <button className="ghost small danger" disabled={busy} onClick={() => window.confirm(`Remove the login “${v.username}”?`) && run(async () => { await api.deleteViewer(v.id); await refresh(); })}>
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="inline-form"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          run(async () => {
+            await api.createViewer(name.trim(), password);
+            setName("");
+            setPassword("");
+            await refresh();
+          });
+        }}
+      >
+        <input aria-label="Username for the read-only login" placeholder="Username" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} required />
+        <input aria-label="Password for the read-only login" placeholder="Password (10 characters or more)" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <button className="primary" disabled={busy || !name.trim() || !password}>Add read-only login</button>
+      </form>
+      {error && <p className="error" role="alert">{error}</p>}
+    </section>
   );
 }
 

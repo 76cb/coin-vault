@@ -75,6 +75,8 @@ class User(Base):
     base_currency: Mapped[str] = mapped_column(String(3), default="USD")
     created_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    # a read-only login: this user sees that owner's collection and can change nothing
+    viewer_of: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
 
 class UserSession(Base):
@@ -195,6 +197,7 @@ class Item(Base):
     created_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)
     deleted_at: Mapped[dt.datetime | None] = mapped_column(TS, index=True)
+    verified_at: Mapped[dt.datetime | None] = mapped_column(TS)  # last seen in an inventory check
 
     location: Mapped[Location | None] = relationship()
     tags: Mapped[list[Tag]] = relationship(secondary=item_tags, order_by="Tag.name")
@@ -587,3 +590,41 @@ class SystemSetting(Base):
     __tablename__ = "system_settings"
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON)
+
+
+# --- Alerts and the want list ---------------------------------------------------------------
+
+
+class SpotAlert(Base):
+    """Tell the owner when a metal's spot price goes above or below a level."""
+
+    __tablename__ = "spot_alerts"
+    __table_args__ = (
+        CheckConstraint(_in("metal", METALS), name="metal"),
+        CheckConstraint(_in("direction", ("above", "below")), name="direction"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    metal: Mapped[str] = mapped_column(String(2))
+    direction: Mapped[str] = mapped_column(String(5))
+    price: Mapped[Decimal] = mapped_column(MONEY)
+    currency: Mapped[str] = mapped_column(String(3))
+    note: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
+    triggered_at: Mapped[dt.datetime | None] = mapped_column(TS)  # set once, when the price first crossed
+    triggered_price: Mapped[Decimal | None] = mapped_column(MONEY)
+    dismissed_at: Mapped[dt.datetime | None] = mapped_column(TS)
+
+
+class WantItem(Base):
+    """Something the owner is looking for."""
+
+    __tablename__ = "want_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    target_price: Mapped[Decimal | None] = mapped_column(MONEY)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(TS, default=utcnow)
+    found_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    found_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="SET NULL"))

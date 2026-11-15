@@ -293,5 +293,5 @@ def test_a_scan_uses_the_weight_stamped_on_the_piece(api, fake, images):
     d = api.post("/api/v1/ai/identify", json={"photos": refs}).json()["described"]
     assert d["compositions"] == [] and d["metal"] == "Ag"
     assert d["stamped"]["fineness_assumed"] is False
-    assert (Decimal(d["stamped"]["gross_weight_g"]), Decimal(d["stamped"]["fineness"])) == (Decimal("31.1035"), Decimal("0.999"))
+    assert (Decimal(d["stamped"]["gross_weight_g"]), Decimal(d["stamped"]["fineness"])) == (Decimal("31.103477"), Decimal("0.999"))
     assert "0.999 ozt silver at 0.999" in d["recognized"]

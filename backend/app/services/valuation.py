@@ -50,6 +50,13 @@ class ItemValues:
     rule_applied: str  # what current value actually used: melt, market, cost or none
 
     @property
+    def premium(self) -> Decimal | None:
+        """What was paid above today's melt value (negative: bought below it). None without both figures."""
+        if self.cost is None or self.melt is None:
+            return None
+        return self.cost - self.melt
+
+    @property
     def gain(self) -> Decimal | None:
         if self.current is None or self.cost is None:
             return None
@@ -154,6 +161,13 @@ class Bucket:
     melt: Decimal = ZERO
     cost: Decimal = ZERO
     current: Decimal = ZERO
+    # by metal only: what was paid for the items made of just this metal, and their ounces (average cost per ounce)
+    priced_cost: Decimal = ZERO
+    priced_toz: Decimal = ZERO
+
+    @property
+    def cost_per_toz(self) -> Decimal | None:
+        return money(self.priced_cost / self.priced_toz) if self.priced_toz else None
 
 
 @dataclass
@@ -172,6 +186,10 @@ class Portfolio:
     cost_unknown_items: int = 0
     no_value_items: int = 0
     estimated_cost_items: int = 0
+    # over the items with both a cost and a melt value: what was paid, and what that metal melts for today
+    premium_cost: Decimal = ZERO
+    premium_melt: Decimal = ZERO
+    premium_items: int = 0
     pure_toz: dict[str, Decimal] = field(default_factory=dict)
     by_metal: dict[str, Bucket] = field(default_factory=dict)
     by_type: dict[str, Bucket] = field(default_factory=dict)
@@ -213,6 +231,10 @@ def portfolio(
         if v.gain is not None:
             p.gain += v.gain
             p.gain_items += 1
+        if v.premium is not None:
+            p.premium_cost += v.cost
+            p.premium_melt += v.melt
+            p.premium_items += 1
         for metal, oz in v.pure_toz_total.items():
             pure[metal] += oz
             b = p.by_metal.setdefault(metal, Bucket(metal, metal_labels.get(metal, metal)))
@@ -221,6 +243,9 @@ def portfolio(
             b.pure_toz += oz
             b.melt += v.melt_by_metal.get(metal, ZERO)
             b.current += v.melt_by_metal.get(metal, ZERO)  # by metal, value means metal value
+            if v.cost is not None and len(v.pure_toz_total) == 1 and oz:
+                b.priced_cost += v.cost
+                b.priced_toz += oz
         tb = p.by_type.setdefault(item.item_type, Bucket(item.item_type, type_labels.get(item.item_type, item.item_type)))
         loc_key = str(item.location_id) if item.location_id else "none"
         lb = p.by_location.setdefault(

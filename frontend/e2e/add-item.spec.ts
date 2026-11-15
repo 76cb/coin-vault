@@ -26,7 +26,7 @@ test("add an item by hand, then add photos and set a cover", async ({ page }) =>
   await expect(page.getByText("0.7735 ozt")).toBeVisible();
 
   // Two photos into an item with none: they become obverse and reverse.
-  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("0007_obv.jpg"), fixture("0007_rev.jpg")]);
+  await page.locator(".photo-manager .dropzone input[type=file]").setInputFiles([fixture("0007_obv.jpg"), fixture("0007_rev.jpg")]);
   const rows = page.locator(".photo-list li");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0).getByRole("combobox")).toHaveValue("obverse");

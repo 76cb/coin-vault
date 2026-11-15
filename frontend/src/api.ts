@@ -38,6 +38,7 @@ export interface Me {
   auth: string;
   csrf_token: string | null;
   scopes: string[];
+  read_only?: boolean; // a login that can look and change nothing
 }
 
 export interface QualityIssue {
@@ -103,6 +104,7 @@ export interface ItemValues {
   cost: string | null;
   current: string | null;
   gain: string | null;
+  premium?: string | null; // paid above today's melt value
   rule: string;
   rule_applied: string;
   pure_toz_total: Record<string, string>;
@@ -138,6 +140,8 @@ export interface Item {
   sale_fees: string | null;
   sale_venue: string | null;
   condition: Condition | null;
+  verified_at?: string | null;
+  gaps?: Gap[];
   details: Record<string, unknown>;
   metal_content: MetalContent[];
   pure_toz_per_unit: Record<string, string>;
@@ -173,6 +177,9 @@ export interface ItemListEntry {
   currency: string;
   updated_at: string;
   deleted_at: string | null;
+  gain?: string | null;
+  verified_at?: string | null;
+  gaps?: Gap[];
   coin_count?: number | null; // a set: how many coins are listed in it
   matched_coins?: string[]; // a set found by a search: the coins in it that matched
 }
@@ -203,6 +210,107 @@ export const SET_KIND_LABELS: Record<string, string> = {
   "": "Not set", proof: "Proof set", silver_proof: "Silver proof set", uncirculated: "Uncirculated mint set",
   special: "Special mint set", other: "Other set",
 };
+
+export type Gap = "metal" | "cost" | "photos" | "value";
+export const GAP_LABELS: Record<Gap, string> = { metal: "No metal content", cost: "No cost", photos: "No photos", value: "No value" };
+
+export interface SpotAlert {
+  id: number;
+  metal: Metal;
+  direction: "above" | "below";
+  price: string;
+  currency: string;
+  note: string | null;
+  created_at: string;
+  triggered_at: string | null;
+  triggered_price: string | null;
+  dismissed_at: string | null;
+  spot: string | null;
+}
+export interface Want {
+  id: number;
+  title: string;
+  target_price: string | null;
+  notes: string | null;
+  created_at: string;
+  found_at: string | null;
+  found_item_id: number | null;
+}
+export interface ChecklistSummary {
+  key: string;
+  name: string;
+  note: string;
+  total: number;
+  have: number;
+}
+export interface Checklist extends ChecklistSummary {
+  entries: { label: string; group: string; have: { id: number; title: string; in_set: boolean }[] }[];
+}
+export interface SaleRow {
+  id: number;
+  title: string;
+  quantity: number;
+  acquired_date: string | null;
+  sale_date: string;
+  sale_venue: string | null;
+  sale_price: string;
+  sale_fees: string;
+  proceeds: string;
+  cost: string | null;
+  cost_estimated: boolean;
+  gain: string | null;
+  days_held: number | null;
+  long_term: boolean | null;
+}
+export interface SalesYear {
+  year: number;
+  count: number;
+  proceeds: string;
+  cost: string;
+  gain: string;
+  gain_short: string;
+  gain_long: string;
+  gain_undated: string;
+  no_cost: number;
+}
+export interface Sales {
+  currency: string;
+  years: SalesYear[];
+  sales: SaleRow[];
+}
+export interface ImportRow {
+  line: number;
+  title: string;
+  ok: boolean;
+  error: string | null;
+  kind: ItemType | null;
+  summary: string | null;
+  item_id: number | null;
+}
+export interface ImportResult {
+  dry_run: boolean;
+  columns_used: string[];
+  columns_ignored: string[];
+  rows: ImportRow[];
+  ok: number;
+  failed: number;
+  created: number;
+}
+export interface Viewer {
+  id: number;
+  username: string;
+  created_at: string;
+  last_login_at: string | null;
+}
+export interface BulkEdit {
+  ids: number[];
+  location_id?: number | null;
+  add_tags?: string[];
+  remove_tags?: string[];
+  status?: "owned" | "for_sale";
+  verified?: boolean;
+  delete?: boolean;
+}
 
 export interface ItemPage {
   items: ItemListEntry[];
@@ -380,6 +488,7 @@ export interface Bucket {
   melt: string;
   cost: string;
   current: string;
+  cost_per_toz?: string | null; // by metal: average paid per ounce
 }
 export interface Summary {
   currency: string;
@@ -399,6 +508,9 @@ export interface Summary {
     cost_unknown_items: number;
     estimated_cost_items: number;
     no_value_items: number;
+    premium_cost: string;
+    premium_melt: string;
+    premium_items: number;
   };
   pure_toz: Record<string, string>;
   by_metal: Bucket[];
@@ -836,6 +948,30 @@ export const api = {
   items: (params: Record<string, string>) => request<ItemPage>("GET", `${A}/items?${new URLSearchParams(params)}`),
   item: (id: number) => request<Item>("GET", `${A}/items/${id}`),
   createItem: (body: unknown) => request<Item>("POST", `${A}/items`, body),
+  bulkEdit: (body: BulkEdit) => request<{ changed: number }>("POST", `${A}/items/bulk`, body),
+  verifyItem: (id: number, seen = true) => request<Item>("POST", `${A}/items/${id}/verify?seen=${seen}`),
+  alerts: () => request<SpotAlert[]>("GET", `${A}/alerts`),
+  createAlert: (body: { metal: Metal; direction: "above" | "below"; price: string; note?: string | null }) => request<SpotAlert>("POST", `${A}/alerts`, body),
+  dismissAlert: (id: number) => request<SpotAlert>("POST", `${A}/alerts/${id}/dismiss`),
+  rearmAlert: (id: number) => request<SpotAlert>("POST", `${A}/alerts/${id}/rearm`),
+  deleteAlert: (id: number) => request<void>("DELETE", `${A}/alerts/${id}`),
+  wants: () => request<Want[]>("GET", `${A}/wants`),
+  createWant: (body: { title: string; target_price?: string | null; notes?: string | null }) => request<Want>("POST", `${A}/wants`, body),
+  updateWant: (id: number, body: { title?: string; target_price?: string | null; notes?: string | null; found?: boolean; found_item_id?: number }) =>
+    request<Want>("PATCH", `${A}/wants/${id}`, body),
+  deleteWant: (id: number) => request<void>("DELETE", `${A}/wants/${id}`),
+  checklists: () => request<ChecklistSummary[]>("GET", `${A}/checklists`),
+  checklist: (key: string) => request<Checklist>("GET", `${A}/checklists/${key}`),
+  sales: (year?: number) => request<Sales>("GET", `${A}/reports/sales${year ? `?year=${year}` : ""}`),
+  qrUrl: (text: string) => `${A}/reference/qr.svg?text=${encodeURIComponent(text)}`,
+  importItems: (file: File, dryRun: boolean) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<ImportResult>("POST", `${A}/import/items?dry_run=${dryRun}`, fd);
+  },
+  viewers: () => request<Viewer[]>("GET", `${A}/auth/viewers`),
+  createViewer: (username: string, password: string) => request<Viewer>("POST", `${A}/auth/viewers`, { username, password }),
+  deleteViewer: (id: number) => request<void>("DELETE", `${A}/auth/viewers/${id}`),
   createItemFromLibrary: (item: unknown, photos: { sha256: string; role: PhotoRole }[]) =>
     request<Item>("POST", `${A}/library/create-item`, { item, photos }),
   updateItem: (id: number, version: number, body: unknown) =>

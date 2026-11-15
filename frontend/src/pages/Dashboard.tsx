@@ -113,6 +113,19 @@ export default function Dashboard() {
           </dd>
           <span className="hint">on {t.gain_items} {t.gain_items === 1 ? "item" : "items"} with a cost</span>
         </div>
+        {t.premium_items > 0 && Number(t.premium_melt) > 0 && (
+          <div>
+            <dt>Paid over melt</dt>
+            <dd>
+              {Number(t.premium_cost) >= Number(t.premium_melt) ? "+" : "−"}
+              {money(String(Math.abs(Number(t.premium_cost) - Number(t.premium_melt))), cur)}
+            </dd>
+            <span className="hint">
+              {(((Number(t.premium_cost) - Number(t.premium_melt)) / Number(t.premium_melt)) * 100).toFixed(0)}% against today's melt, on {t.premium_items}{" "}
+              {t.premium_items === 1 ? "item" : "items"} with a cost and metal
+            </span>
+          </div>
+        )}
       </dl>
 
       {heldMetals.length > 0 && (
@@ -122,6 +135,12 @@ export default function Dashboard() {
               <dt>{METAL_LABELS[m]}</dt>
               <dd>{toz(s.pure_toz[m])}</dd>
               <span className="hint">pure, {money(s.by_metal.find((b) => b.key === m)?.melt ?? "0", cur)} at spot</span>
+              {s.by_metal.find((b) => b.key === m)?.cost_per_toz && (
+                <span className="hint cost-per-oz">
+                  You paid {money(s.by_metal.find((b) => b.key === m)!.cost_per_toz!, cur)} an ounce on average; spot is{" "}
+                  {money(s.spot.metals.find((x) => x.metal === m)?.price ?? null, cur)}
+                </span>
+              )}
             </div>
           ))}
         </dl>

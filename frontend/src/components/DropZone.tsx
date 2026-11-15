@@ -9,6 +9,7 @@ export default function DropZone({
   accept = ACCEPT,
   multiple = true,
   disabled = false,
+  camera = accept === ACCEPT,
 }: {
   onFiles: (files: File[]) => void;
   label: string;
@@ -16,6 +17,7 @@ export default function DropZone({
   accept?: string;
   multiple?: boolean;
   disabled?: boolean;
+  camera?: boolean; // offer "Take a photo" (photo drop zones only)
 }) {
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -27,6 +29,7 @@ export default function DropZone({
   };
 
   return (
+    <>
     <div
       className={`dropzone${over ? " over" : ""}${disabled ? " disabled" : ""}`}
       onDragOver={(e: DragEvent) => {
@@ -57,5 +60,23 @@ export default function DropZone({
         }}
       />
     </div>
+    {camera && (
+      /* on a phone this opens the camera, so a photo goes straight in without saving it to the camera roll first */
+      <label className={`button ghost small camera-button${disabled ? " disabled" : ""}`}>
+        Take a photo
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          disabled={disabled}
+          className="visually-hidden"
+          onChange={(e) => {
+            take(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </label>
+    )}
+    </>
   );
 }

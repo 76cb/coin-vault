@@ -584,6 +584,7 @@ def values_out(db: Session, item: Item, currency: str, spot: dict) -> ItemValues
         cost=v.cost,
         current=v.current,
         gain=v.gain,
+        premium=v.premium,
         rule=v.rule,
         rule_applied=v.rule_applied,
         pure_toz_total=v.pure_toz_total,
@@ -642,7 +643,29 @@ def item_out(db: Session, item: Item, spot: dict | None = None) -> ItemOut:
         created_at=item.created_at,
         updated_at=item.updated_at,
         deleted_at=item.deleted_at,
+        verified_at=item.verified_at,
+        gaps=gaps(item, valuation.item_values(db, item, spot, currency=currency)),
     )
+
+
+GAPS = ("metal", "cost", "photos", "value")
+
+
+def gaps(item: Item, v: valuation.ItemValues) -> list[str]:
+    """What an item is missing, of the things that make its figures and report complete."""
+    out = []
+    t = item.item_type
+    base_metal = t == "coin" and item.coin is not None and bool(item.coin.composition)
+    listed = t == "set" and any(c.composition or c.metal for c in item.set_coins)
+    if not v.pure_toz_per_unit and t not in ("banknote", "other") and not base_metal and not listed:
+        out.append("metal")
+    if item.purchase_price is None:
+        out.append("cost")
+    if not item.photos:
+        out.append("photos")
+    if v.current is None:
+        out.append("value")
+    return out
 
 
 def matching_set_coins(item: Item, q: str | None) -> list[str]:
@@ -683,6 +706,9 @@ def list_entry(
         currency=currency,
         updated_at=item.updated_at,
         deleted_at=item.deleted_at,
+        gain=v.gain,
+        verified_at=item.verified_at,
+        gaps=gaps(item, v),
         coin_count=sum(c.quantity for c in item.set_coins) if item.item_type == "set" else None,
         matched_coins=matching_set_coins(item, q),
     )

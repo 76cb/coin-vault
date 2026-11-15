@@ -15,7 +15,7 @@ test("put a photo from one item on another, from the item page and the Photos pa
   };
   const first = unique("Library source");
   await make(first);
-  await page.locator(".photo-manager input[type=file]").setInputFiles([fixture("IMG_2001.jpg")]);
+  await page.locator(".photo-manager .dropzone input[type=file]").setInputFiles([fixture("IMG_2001.jpg")]);
   await expect(page.locator(".photo-list li")).toHaveCount(1);
 
   const second = unique("Library target");
@@ -46,7 +46,7 @@ test("delete photos from the Photos page", async ({ page }) => {
   const own = (name: string) => ({
     name, mimeType: "image/jpeg", buffer: Buffer.concat([readFileSync(fixture(name)), Buffer.from(` ${title} ${name}`)]),
   });
-  await page.locator(".photo-manager input[type=file]").setInputFiles([own("0007_obv.jpg"), own("0007_rev.jpg")]);
+  await page.locator(".photo-manager .dropzone input[type=file]").setInputFiles([own("0007_obv.jpg"), own("0007_rev.jpg")]);
   await expect(page.locator(".photo-list li")).toHaveCount(2);
   const itemUrl = page.url();
 

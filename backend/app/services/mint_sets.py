@@ -2,8 +2,9 @@
 coin in it listed (and found by search), and its silver added up from the coins that have any.
 
 Covered: proof sets 1936-1941 and 1950-2025, silver proof sets 1992-2025, and the quarters-only proof sets
-(clad and silver) 1999-2025. Not covered, because their contents vary by packaging or weren't checked:
-1942 proof sets (five or six coins), uncirculated mint sets, Prestige, Premier and Limited Edition sets and
+(clad and silver) 1999-2025, and the annual Uncirculated Coin Sets 1999-2025 (Philadelphia and Denver coins).
+Not covered, because their contents vary by packaging or weren't checked: 1942 proof sets (five or six coins),
+uncirculated sets before 1999, Prestige, Premier and Limited Edition sets and
 the 1976 three-coin 40% silver set. Those are typed in coin by coin.
 
 Sources (checked 2026-11-15):
@@ -17,7 +18,7 @@ Sources (checked 2026-11-15):
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.services import base_metals
@@ -188,7 +189,9 @@ def _quarter_series_name(year: int) -> str:
 
 
 def contents(year: int | None, kind: str | None, quarters_only: bool = False) -> SetSpec | None:
-    """The coins in a US Mint proof set of this year and kind, or None when this list doesn't cover it."""
+    """The coins in a US Mint set of this year and kind, or None when this list doesn't cover it."""
+    if kind == "uncirculated":
+        return _uncirculated(year)
     if year is None or kind not in ("proof", "silver_proof"):
         return None
     silver_set = kind == "silver_proof"
@@ -213,7 +216,27 @@ def contents(year: int | None, kind: str | None, quarters_only: bool = False) ->
             return None
         name = f"{_quarter_series_name(year)} {'Silver ' if silver_set else ''}Proof Set"
         return SetSpec(name, kind, year, mark, quarters)
+    return SetSpec("Silver Proof Set" if silver_set else "Proof Set", kind, year, mark, _year_coins(year, mark, silver))
 
+
+def _uncirculated(year: int | None) -> SetSpec | None:
+    """The annual Uncirculated Coin Set, 1999-2025: one of each circulating coin from Philadelphia and from Denver,
+    none of them silver. (Earlier years' sets vary too much to list from the year alone.) Philadelphia cents carry
+    no mint mark, except in 2017."""
+    if year is None or not 1999 <= year <= 2025:
+        return None
+    coins: list[SetCoinSpec] = []
+    for mint in ("P", "D"):
+        for c in _year_coins(year, mint, lambda _denom: None):
+            if mint == "P" and c.denomination == "1c" and year != 2017:
+                c = replace(c, label=c.label.replace(f"{year}-P ", f"{year} ", 1), mint_mark=None)
+            coins.append(c)
+    return SetSpec("Uncirculated Coin Set", "uncirculated", year, None, coins)
+
+
+def _year_coins(year: int, mark: str | None, silver) -> list[SetCoinSpec]:
+    """One of each denomination and design struck for the year, cent to dollars, with this mint mark."""
+    quarters = [_coin(year, mark, "25c", f"{n} quarter", s, silver("25c")) for n, s in _quarters(year)]
     coins: list[SetCoinSpec] = []
     if year == 2009:
         coins += [_coin(year, mark, "1c", f"Lincoln cent, {n}", "Lincoln Bicentennial", composition=CENT_2009) for n in CENTS_2009]
@@ -230,4 +253,4 @@ def contents(year: int | None, kind: str | None, quarters_only: bool = False) ->
     half = _half_series(year)
     coins.append(_coin(year, mark, "50c", f"{half} half dollar", half, silver("50c")))
     coins += [_coin(year, mark, "$1", n, s) for n, s in _dollars(year)]
-    return SetSpec("Silver Proof Set" if silver_set else "Proof Set", kind, year, mark, coins)
+    return coins

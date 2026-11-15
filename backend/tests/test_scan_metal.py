@@ -33,7 +33,7 @@ def test_stated_fineness(text, fineness):
 def test_metal_worked_out_when_no_reference_fits(api, title, metal, grams, fineness, assumed):
     d = _describe(api, title)
     s = d["stamped"]
-    assert d["compositions"] == [] and s["metal"] == metal and Decimal(s["gross_weight_g"]) == Decimal(grams)
+    assert d["compositions"] == [] and s["metal"] == metal and Decimal(s["gross_weight_g"]).quantize(Decimal("0.0001")) == Decimal(grams)
     assert (Decimal(s["fineness"]) if s["fineness"] else None) == (Decimal(fineness) if fineness else None)
     assert s["fineness_assumed"] is assumed
     assert any(("assumed" in r) == assumed and ("ozt" in r or "fineness not given" in r) for r in d["recognized"][-1:])

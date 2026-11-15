@@ -13,7 +13,7 @@ from app import scheduler
 from app.config import get_settings
 from app.crypto import EncryptionUnavailable
 from app.db import get_db
-from app.deps import Principal, require_session
+from app.deps import Principal, require_owner_session, require_session
 from app.models import ApiCallLog
 from app.providers.base import CATALOG
 from app.services import provider_admin
@@ -61,7 +61,7 @@ def get_app_settings(principal: Principal = Depends(require_session), db: Sessio
 
 
 @router.patch("", response_model=SettingsOut)
-def patch_app_settings(body: SettingsPatch, principal: Principal = Depends(require_session), db: Session = Depends(get_db)):
+def patch_app_settings(body: SettingsPatch, principal: Principal = Depends(require_owner_session), db: Session = Depends(get_db)):
     data = body.model_dump(exclude_unset=True)
     if "base_currency" in data and data["base_currency"]:
         cur = data["base_currency"].upper()

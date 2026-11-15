@@ -2,10 +2,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { api, Item, ITEM_TYPE_LABELS, Metal, METAL_LABELS, money, ozt, ROLE_LABELS, RULE_LABELS, SET_KIND_LABELS, SetCoin, STATUS_LABELS } from "../api";
+import { api, GAP_LABELS, Item, ITEM_TYPE_LABELS, Metal, METAL_LABELS, money, ozt, ROLE_LABELS, RULE_LABELS, SET_KIND_LABELS, SetCoin, STATUS_LABELS } from "../api";
 import { AiGradeGuess, AiIdentify, useAiReady } from "../components/Ai";
 import Documents from "../components/Documents";
-import ItemForm, { fillBlanks, FormState } from "../components/ItemForm";
+import { useCanWrite } from "../access";
+import ItemForm, { copyOf, fillBlanks, FormState } from "../components/ItemForm";
 import MarketValue from "../components/MarketValue";
 import PhotoManager from "../components/PhotoManager";
 
@@ -54,6 +55,7 @@ export default function ItemPage() {
   const [editing, setEditing] = useState(false);
   const [editSeed, setEditSeed] = useState<{ n: number; defaults: Partial<FormState> } | null>(null);
   const ai = useAiReady();
+  const canWrite = useCanWrite();
   const [showHistory, setShowHistory] = useState(false);
   const [active, setActive] = useState<number | null>(null);
   const item = useQuery({ queryKey: ["item", id], queryFn: () => api.item(id) });
@@ -85,11 +87,12 @@ export default function ItemPage() {
       <div className="page-head">
         <h1>{it.title}</h1>
         <div className="head-actions">
-          {it.deleted_at ? (
+          {!canWrite ? null : it.deleted_at ? (
             <button className="primary" onClick={async () => { await api.restoreItem(it.id); await refresh(); }}>Restore item</button>
           ) : (
             <>
               <button onClick={() => { setEditSeed(null); setEditing((e) => !e); }}>{editing ? "Close editor" : "Edit details"}</button>
+              <button className="ghost" title="Start a new item with these details" onClick={() => navigate("/items/new", { state: { copy: copyOf(it) } })}>Duplicate</button>
               <button
                 className="ghost danger"
                 onClick={async () => {
@@ -151,7 +154,7 @@ export default function ItemPage() {
                 <dd>{ITEM_TYPE_LABELS[it.item_type]}{it.quantity > 1 ? `, ${it.quantity} pieces` : ""}</dd>
                 <dt>Status</dt>
                 <dd>{STATUS_LABELS[it.status]}</dd>
-                {grade(it) && (<><dt>Grade</dt><dd>{grade(it)}{it.condition?.cert_number ? `, cert ${it.condition.cert_number}` : ""}</dd></>)}
+                {grade(it) && (<><dt>Grade</dt><dd>{grade(it)}{it.condition?.cert_number ? `, cert ${it.condition.cert_number}` : ""}{certLink(it)}</dd></>)}
                 {details.map(([k, v]) => (
                   <FactRow key={k} label={DETAIL_LABELS[k] ?? k} value={v === true ? "Yes" : tidyNumber(String(v))} />
                 ))}
@@ -159,7 +162,19 @@ export default function ItemPage() {
                   <FactRow key={k} label={k} value={v} />
                 ))}
                 {it.location_path && <FactRow label="Stored in" value={it.location_path} />}
+                <dt>Last seen</dt>
+                <dd>
+                  {it.verified_at ? new Date(it.verified_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : <span className="hint">Not checked yet</span>}
+                  {canWrite && !it.deleted_at && (
+                    <button className="link seen-button" onClick={async () => { await api.verifyItem(it.id); await refresh(); }}>
+                      {it.verified_at ? "Seen again today" : "I've seen it today"}
+                    </button>
+                  )}
+                </dd>
               </dl>
+              {it.gaps && it.gaps.length > 0 && it.status !== "sold" && (
+                <p className="hint gaps-note">Still to add: {it.gaps.map((g) => GAP_LABELS[g].replace(/^No /, "")).join(", ")}.</p>
+              )}
 
               {it.item_type === "set" && (
                 <>
@@ -347,11 +362,34 @@ function ValuePanel({ item }: { item: Item }) {
             <dd className={`tabular ${Number(v.gain) < 0 ? "is-loss" : ""}`}>{Number(v.gain) > 0 ? "+" : ""}{money(v.gain, cur)}</dd>
           </>
         )}
+        {v.premium && v.melt && Number(v.melt) > 0 && (
+          <>
+            <dt>Over melt</dt>
+            <dd className="tabular" title="What you paid, compared with what the metal is worth at today's spot price">
+              {Number(v.premium) >= 0 ? `Paid ${money(v.premium, cur)} more than today's melt` : `Paid ${money(String(-Number(v.premium)), cur)} less than today's melt`}
+              <span className="hint"> ({Number(v.premium) >= 0 ? "+" : ""}{((Number(v.premium) / Number(v.melt)) * 100).toFixed(0)}%)</span>
+            </dd>
+          </>
+        )}
       </dl>
       <p className="hint">{ruleText}</p>
       {missing.length > 0 && <p className="hint">No spot price yet for {missing.join(" and ")}, so that part of the melt value is missing.</p>}
     </section>
   );
+}
+
+/** A link to the grading service's own page for this cert, for PCGS and NGC. */
+function certLink(it: Item) {
+  const c = it.condition;
+  const cert = c?.cert_number?.trim();
+  if (!c || !cert) return null;
+  const service = (c.grading_service ?? "").toUpperCase();
+  let url: string | null = null;
+  if (service === "PCGS") url = `https://www.pcgs.com/cert/${encodeURIComponent(cert.replace(/\D/g, ""))}`;
+  // NGC's lookup takes the cert number and the numeric grade
+  else if (service === "NGC") url = `https://www.ngccoin.com/certlookup/${encodeURIComponent(cert)}/${c.sheldon_grade ?? ""}${c.sheldon_grade ? "/" : ""}`;
+  if (!url) return null;
+  return <> <a href={url} target="_blank" rel="noreferrer">Check at {service}</a></>;
 }
 
 /** "100.000000" -> "100"; leaves anything that isn't a plain decimal alone (years, serials, text). */

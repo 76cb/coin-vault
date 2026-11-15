@@ -15,6 +15,8 @@ from app.db import get_db
 from app.models import ApiToken, User, UserSession, utcnow
 from app.security import SCOPES, constant_time_equals, parse_api_token, sha256_hex
 
+VIEWER_SCOPES = ("items:read", "prices:read", "export")  # a read-only login never gets items:write
+
 request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -31,7 +33,12 @@ class Principal:
 
     @property
     def owner_id(self) -> int:
-        return self.user.id
+        """Whose collection this is: the user's own, or for a read-only login the owner they were given access to."""
+        return self.user.viewer_of or self.user.id
+
+    @property
+    def read_only(self) -> bool:
+        return self.user.viewer_of is not None
 
     @property
     def actor(self) -> tuple[str, int]:
@@ -65,7 +72,10 @@ def _from_token(raw: str, db: Session) -> Principal | None:
     if last is None or now - last > dt.timedelta(minutes=5):
         token.last_used_at = now
         db.commit()
-    return Principal(user=token.user, kind="token", scopes=set(token.scopes or []), token=token)
+    scopes = set(token.scopes or [])
+    if token.user.viewer_of is not None:
+        scopes &= set(VIEWER_SCOPES)
+    return Principal(user=token.user, kind="token", scopes=scopes, token=token)
 
 
 def _from_session(raw: str, db: Session) -> Principal | None:
@@ -80,7 +90,8 @@ def _from_session(raw: str, db: Session) -> Principal | None:
     if now - _aware(sess.last_seen_at) > dt.timedelta(minutes=5):
         sess.last_seen_at = now
         db.commit()
-    return Principal(user=sess.user, kind="session", scopes=set(SCOPES), session=sess)
+    scopes = set(VIEWER_SCOPES if sess.user.viewer_of is not None else SCOPES)
+    return Principal(user=sess.user, kind="session", scopes=scopes, session=sess)
 
 
 def optional_principal(request: Request, db: Session = Depends(get_db)) -> Principal | None:
@@ -103,9 +114,14 @@ def optional_principal(request: Request, db: Session = Depends(get_db)) -> Princ
     return principal
 
 
-def current_principal(principal: Principal | None = Depends(optional_principal)) -> Principal:
+READ_ONLY_MAY = ("/auth/logout", "/auth/password")  # the only changes a read-only login can make
+
+
+def current_principal(request: Request, principal: Principal | None = Depends(optional_principal)) -> Principal:
     if principal is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not signed in")
+    if principal.read_only and request.method not in SAFE_METHODS and not request.url.path.endswith(READ_ONLY_MAY):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This login is read-only")
     return principal
 
 
@@ -123,6 +139,13 @@ def require_scope(scope: str):
 def require_session(principal: Principal = Depends(current_principal)) -> Principal:
     if principal.kind != "session":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This action needs a signed-in browser session")
+    return principal
+
+
+def require_owner_session(principal: Principal = Depends(require_session)) -> Principal:
+    """A signed-in browser session of the collection's owner (not a read-only login)."""
+    if principal.read_only:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This login is read-only")
     return principal
 
 

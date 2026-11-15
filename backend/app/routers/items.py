@@ -27,6 +27,8 @@ from app.models import (
 )
 from app.schemas import (
     AuditEntry,
+    BulkEdit,
+    BulkResult,
     ItemCreate,
     ItemOut,
     ItemPage,
@@ -74,6 +76,7 @@ class ItemFilters:
     location_id: int | None = None
     tag: str | None = None
     deleted: bool = False
+    missing: str | None = None  # needs attention: any, metal, cost, photos or value
 
 
 def item_filters(
@@ -84,8 +87,14 @@ def item_filters(
     location_id: int | None = None,
     tag: str | None = None,
     deleted: bool = False,
+    missing: Literal["any", "metal", "cost", "photos", "value"] | None = None,
 ) -> ItemFilters:
-    return ItemFilters(q, item_type, item_status, metal, location_id, tag, deleted)
+    return ItemFilters(q, item_type, item_status, metal, location_id, tag, deleted, missing)
+
+
+def has_gap(found: list[str], missing: str | None) -> bool:
+    """Whether an item with these gaps passes the needs-attention filter."""
+    return missing is None or (bool(found) if missing == "any" else missing in found)
 
 
 def filtered_items(owner_id: int, f: ItemFilters):
@@ -164,11 +173,13 @@ def list_items(
     principal: Principal = Depends(read_items),
     db: Session = Depends(get_db),
     f: ItemFilters = Depends(item_filters),
-    sort: Literal["updated", "created", "title", "acquired", "year"] = "updated",
+    sort: Literal["updated", "created", "title", "acquired", "year", "value", "melt", "gain", "cost"] = "updated",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ) -> ItemPage:
     stmt = filtered_items(principal.owner_id, f)
+    if sort in COMPUTED_SORTS or f.missing:
+        return _computed_page(db, principal, f, stmt, sort, page, page_size)
     total = db.scalar(select(func.count()).select_from(stmt.with_only_columns(Item.id).subquery())) or 0
     stmt = (
         stmt.order_by(SORTS[sort], Item.id.desc())
@@ -186,6 +197,59 @@ def list_items(
     return ItemPage(
         items=[svc.list_entry(db, it, paths, spot, currency, f.q) for it in rows], total=total, page=page, page_size=page_size
     )
+
+
+COMPUTED_SORTS = {"value": "current", "melt": "melt", "gain": "gain", "cost": "cost_basis"}
+
+
+def _computed_page(db: Session, principal: Principal, f: ItemFilters, stmt, sort: str, page: int, page_size: int) -> ItemPage:
+    """Sorting by a worked-out figure, or filtering on what's missing: every matching item is valued, then the page
+    is cut. Largest first; items without the figure go last."""
+    rows = db.scalars(stmt.order_by(SORTS.get(sort, SORTS["updated"]), Item.id.desc()).options(*ITEM_LOAD)).unique().all()
+    paths = {
+        loc.id: svc.location_path(db, loc.id)
+        for loc in db.scalars(select(Location).where(Location.owner_id == principal.owner_id))
+    }
+    currency = principal.user.base_currency
+    spot = spot_svc.spot_map(db, currency)
+    entries = [e for e in (svc.list_entry(db, it, paths, spot, currency, f.q) for it in rows) if has_gap(e.gaps, f.missing)]
+    if sort in COMPUTED_SORTS:
+        attr = COMPUTED_SORTS[sort]
+        entries.sort(key=lambda e: (getattr(e, attr) is None, -(getattr(e, attr) or 0)))
+    start = (page - 1) * page_size
+    return ItemPage(items=entries[start : start + page_size], total=len(entries), page=page, page_size=page_size)
+
+
+@router.post("/bulk", response_model=BulkResult)
+def bulk_edit(body: BulkEdit, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+    """Move, tag, re-status, mark as seen or delete many items at once."""
+    sent = body.model_fields_set
+    if "location_id" in sent:
+        svc.owned_location(db, principal.owner_id, body.location_id)
+    items = [svc.get_item(db, principal, i) for i in dict.fromkeys(body.ids)]
+    add = svc.resolve_tags(db, principal.owner_id, [t.strip() for t in body.add_tags if t.strip()])
+    drop = {t.strip().lower() for t in body.remove_tags}
+    now = utcnow()
+    for item in items:
+        before = svc.audit_snapshot(item)
+        if body.delete:
+            item.deleted_at = now
+            svc.audit_event(db, principal, item, "deleted", None, now.isoformat())
+        if "location_id" in sent:
+            item.location_id = body.location_id
+        if body.status and item.status != "sold":
+            item.status = body.status
+        if add or drop:
+            keep = [t for t in item.tags if t.name.lower() not in drop]
+            item.tags = keep + [t for t in add if t.name.lower() not in {k.name.lower() for k in keep}]
+        if body.verified is not None:
+            item.verified_at = now if body.verified else None
+        item.version += 1
+        item.updated_at = now
+        db.flush()
+        svc.write_audit(db, principal, item, before, svc.audit_snapshot(item))
+    db.commit()
+    return BulkResult(changed=len(items))
 
 
 @router.post("", response_model=ItemOut, status_code=201)
@@ -227,6 +291,15 @@ def sell_item(item_id: int, body: SaleIn, principal: Principal = Depends(write_i
     item.updated_at = utcnow()
     db.flush()
     svc.write_audit(db, principal, item, before, svc.audit_snapshot(item))
+    db.commit()
+    return svc.item_out(db, item)
+
+
+@router.post("/{item_id}/verify", response_model=ItemOut)
+def verify_item(item_id: int, seen: bool = True, principal: Principal = Depends(write_items), db: Session = Depends(get_db)):
+    """Record that the piece was seen where it should be (an inventory check), or clear that."""
+    item = _load(db, principal, item_id)
+    item.verified_at = utcnow() if seen else None
     db.commit()
     return svc.item_out(db, item)
 
